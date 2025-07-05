@@ -258,7 +258,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(ctx context.Context, source, playl
 	comment := fmt.Sprintf("%s&nbsp;%s", listenBrainzPlaylist.Annotation, listenBrainzPlaylist.Identifier)
 
 	if existingPlaylist != nil && existingPlaylist.Comment != comment {
-		policy := bluemonday.UGCPolicy()
+		policy := bluemonday.StrictPolicy()
 		sanitized := html.UnescapeString(policy.Sanitize(comment))
 		updatePlaylistParams := url.Values{
 			"playlistId": []string{existingPlaylist.Id},
