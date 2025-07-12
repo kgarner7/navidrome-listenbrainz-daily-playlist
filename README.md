@@ -2,10 +2,48 @@
 
 This repository contains a plugin for fetching daily playlists from [ListenBrainz](https://listenbrainz.org/)
 
+## Requirements
+1. Your library should have MBIDs for your tracks (or at least, most of them). This plugin does song lookups _only_ using MBID.
+2. A ListenBrainz account per user you wish to fetch
+3. If you want daily playlists (`daily-jams`), you should follow the [`troi-bot`](https://listenbrainz.org/user/troi-bot/) user
+4. Navidrome >= 0.57.0. Searching by MBID was added in 0.57.0, and this will not work otherwise
+
+## Install from source
+
+Requirements:
+- `go` 1.24
+
+### Build WASM plugin
+
+```bash
+go mod download
+GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm plugin.go
+```
+
+### Package plugin
+
+Copy the following files: `manifest.json` and `plugin.wasm`. 
+Put them in a directory in your Navidrome `Plugins.Folder`.
+Make sure that:
+1. You have plugins enabled (`Plugins.Enabled = true`, `ND_PLUGINS_ENABLED = true`).
+2. Your Navidrome user has read permissions in the plugin directory
+
+Restart Navidrome and you should see the following message in your logs (`info` or more verbose)
+
+```
+level=info msg="Discovered plugin" capabilities="[LifecycleManagement SchedulerCallback]" dev_mode=false folder=listenbrainz-daily-playlist name=listenbrainz-daily-playlist wasm=PATH_TO_WASM_PLUGIN
+```
+
 ## Configuration
 
 ```toml
 # A complete configuration
+
+[Plugins]
+Enabled = true
+# Optional, if you want to specify a different path. Otherwise it is your data directory / plugins
+Folder = "SOME_CUSTOM_PATH_TO_PLUGINS"
+
 [PluginConfig.listenbrainz-daily-playlist]
 Split = ";"
 
