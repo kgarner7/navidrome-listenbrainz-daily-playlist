@@ -283,9 +283,9 @@ func (b *BrainzPlaylistPlugin) OnSchedulerCallback(ctx context.Context, req *api
 
 	conf := configResp.Config
 
-	delimeter := conf["split"]
-	if delimeter == "" {
-		delimeter = ";"
+	delimiter := conf["split"]
+	if delimiter == "" {
+		delimiter = ";"
 	}
 
 	playlistName := conf["playlistname"]
@@ -293,8 +293,8 @@ func (b *BrainzPlaylistPlugin) OnSchedulerCallback(ctx context.Context, req *api
 		playlistName = "ListenBrainz Daily Jams"
 	}
 
-	subsonicUsers := strings.Split(conf["users"], delimeter)
-	sources := strings.Split(conf["sources"], delimeter)
+	subsonicUsers := strings.Split(conf["users"], delimiter)
+	sources := strings.Split(conf["sources"], delimiter)
 
 	for idx := range subsonicUsers {
 		lbzUser := conf[fmt.Sprintf("users[%d]", idx)]
@@ -316,7 +316,7 @@ func (b *BrainzPlaylistPlugin) OnSchedulerCallback(ctx context.Context, req *api
 	return &api.SchedulerCallbackResponse{}, nil
 }
 
-func (BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest) (*api.InitResponse, error) {
+func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest) (*api.InitResponse, error) {
 	configResp, err := configService.GetPluginConfig(ctx, &config.GetPluginConfigRequest{})
 	if err != nil {
 		log.Printf("Failed to get plugin configuration: %v", err)
@@ -327,22 +327,22 @@ func (BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest) (*
 
 	schedule, ok := conf["schedule"]
 	if !ok {
-		log.Printf("Missing required 'schedule' configuraiton")
+		log.Printf("Missing required 'schedule' configuration")
 		return &api.InitResponse{Error: "Missing required 'schedule' configuration"}, nil
 	}
 
-	delimeter := conf["split"]
-	if delimeter == "" {
-		delimeter = ";"
+	delimiter := conf["split"]
+	if delimiter == "" {
+		delimiter = ";"
 	}
 
 	usersString := conf["users"]
 	if usersString == "" {
-		log.Printf("Missing required 'users' configuraiton")
+		log.Printf("Missing required 'users' configuration")
 		return &api.InitResponse{Error: "Missing required 'users' configuration"}, nil
 	}
 
-	split := strings.Split(usersString, delimeter)
+	split := strings.Split(usersString, delimiter)
 	userOk := true
 
 	for idx := range split {
@@ -350,7 +350,7 @@ func (BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest) (*
 
 		if lbzUser == "" {
 			userOk = false
-			log.Printf("User %s is missing a listenbrainz username", split[idx])
+			log.Printf("User %s is missing a ListenBrainz username", split[idx])
 		}
 	}
 
@@ -360,11 +360,11 @@ func (BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest) (*
 
 	sourcesString := conf["sources"]
 	if sourcesString == "" {
-		log.Printf("Missing required 'sources' configuraiton")
+		log.Printf("Missing required 'sources' configuration")
 		return &api.InitResponse{Error: "Missing required 'sources' configuration"}, nil
 	}
 
-	split = strings.Split(sourcesString, delimeter)
+	split = strings.Split(sourcesString, delimiter)
 	sourcesOk := true
 
 	for idx := range split {
@@ -397,6 +397,10 @@ func (BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest) (*
 func main() {}
 
 func init() {
+	// Configure logging: No timestamps, no source file/line, prepend [Discord]
+	log.SetFlags(0)
+	log.SetPrefix("[ListenBrainz Daily Playlist Fetcher]")
+
 	api.RegisterLifecycleManagement(&BrainzPlaylistPlugin{})
 	api.RegisterSchedulerCallback(&BrainzPlaylistPlugin{})
 }

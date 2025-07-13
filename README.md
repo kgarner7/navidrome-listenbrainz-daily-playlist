@@ -46,8 +46,7 @@ Folder = "SOME_CUSTOM_PATH_TO_PLUGINS"
 
 [PluginConfig.listenbrainz-daily-playlist]
 Split = ";"
-
-Schedule = "0 3 * * *"
+Schedule = "@every 24h"
 
 Sources = "daily-jams;weekly-jams"
 "Sources[0]" = "ListenBrainz Daily Jams"
@@ -67,7 +66,7 @@ The default value if not specified is `;`
 ### Schedule
 This is a cron schedule instructing how often to run the sync.
 Since ListenBrainz playlists are only updated once a day, it is recommended to only do it once a day.
-The sample configuration `0 3 * * *` does it every day at 3:00 AM 
+The sample configuration `@every 24h` does it every 24 hours.
 
 ### Sources
 This specifies the source(s) to fetch from ListenBrainz, and what name to use when importing into Navidrome.
