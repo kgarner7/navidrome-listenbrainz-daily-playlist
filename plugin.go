@@ -446,9 +446,11 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 	if conf["checkonstartup"] != "false" {
 		err := b.initialFetch(ctx, schedService, conf, usersSplit, sourceNames)
 		if err != nil {
-			return &api.InitResponse{Error: err.Error()}, nil
+			log.Println("Failed to do initial sync. Proceeding anyway %w", err)
 		}
 	}
+
+	log.Println("init success")
 
 	return &api.InitResponse{}, nil
 }
