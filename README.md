@@ -64,9 +64,12 @@ This is an optional section, but it defines how multi-valued fields are split.
 The default value if not specified is `;`
 
 ### Schedule
-This is a cron schedule instructing how often to run the sync.
-Since ListenBrainz playlists are only updated once a day, it is recommended to only do it once a day.
+This is a schedule instructing how often to run the sync.
 The sample configuration `@every 24h` does it every 24 hours.
+This is the default option, so it can be omitted.
+Please note that ListenBrainz playlists are only updated once a day.
+
+Also note, when Navidrome is restarted, this plugin will check if any playlists are out of date, and if so, fetch them.
 
 ### Sources
 This specifies the source(s) to fetch from ListenBrainz, and what name to use when importing into Navidrome.
@@ -91,6 +94,16 @@ This specifies which Subsonic/Navidrome users to fetch, and provides their Liste
 
 In the example provided, there are two users, `user1` and `user`. 
 Their ListenBrainz usernames are `lb-uzername-1` and `lb-uzername-2`, respectively.
+
+### Optional settings
+To disable fetching on service start, pass in the following config to the plugin:
+
+```toml
+CheckOnStartup = "false"
+```
+
+Note that this value needs to be in quotes (not a boolean).
+
 
 ## How does it work?
 This plugin relies on a special quick of Navidrome, wherein using the `/rest/search3` endpoint by MBID will return exact matches.

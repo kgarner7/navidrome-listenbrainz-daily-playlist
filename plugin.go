@@ -32,12 +32,6 @@ var (
 
 	// SubsonicAPIService instance for making API calls
 	subsonicService = subsonicapi.NewSubsonicAPIService()
-
-	// ConfigService instance for accessing plugin configuration.
-	configService = config.NewConfigService()
-
-	// SchedulerService instance for scheduling tasks.
-	schedService = scheduler.NewSchedulerService()
 )
 
 type BrainzPlaylistPlugin struct{}
@@ -179,6 +173,18 @@ func (b *BrainzPlaylistPlugin) makeSubsonicRequest(ctx context.Context, endpoint
 	return &decoded, true
 }
 
+func (b *BrainzPlaylistPlugin) findExistingPlaylist(resp *responses.JsonWrapper, playlistName string) *responses.Playlist {
+	if len(resp.Subsonic.Playlists.Playlist) > 0 {
+		for _, playlist := range resp.Subsonic.Playlists.Playlist {
+			if playlist.Name == playlistName {
+				return &playlist
+			}
+		}
+	}
+
+	return nil
+}
+
 func (b *BrainzPlaylistPlugin) importPlaylist(ctx context.Context, source, playlistName, subsonicUser string, playlists []overallPlaylist) {
 	var id string
 	var err error
@@ -229,17 +235,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(ctx context.Context, source, playl
 		return
 	}
 
-	var existingPlaylist *responses.Playlist = nil
-
-	if len(resp.Subsonic.Playlists.Playlist) > 0 {
-		for _, playlist := range resp.Subsonic.Playlists.Playlist {
-			if playlist.Name == playlistName {
-				existingPlaylist = &playlist
-				break
-			}
-		}
-	}
-
+	existingPlaylist := b.findExistingPlaylist(resp, playlistName)
 	createPlaylistParams := url.Values{
 		"songId": songIds,
 	}
@@ -271,26 +267,13 @@ func (b *BrainzPlaylistPlugin) importPlaylist(ctx context.Context, source, playl
 		}
 	}
 
-	log.Printf("Successfully processed playlist for user %s", subsonicUser)
+	log.Printf("Successfully processed playlist %s for user %s", playlistName, subsonicUser)
 }
 
-func (b *BrainzPlaylistPlugin) OnSchedulerCallback(ctx context.Context, req *api.SchedulerCallbackRequest) (*api.SchedulerCallbackResponse, error) {
-	configResp, err := configService.GetPluginConfig(ctx, &config.GetPluginConfigRequest{})
-	if err != nil {
-		log.Printf("Failed to get plugin configuration: %v", err)
-		return &api.SchedulerCallbackResponse{Error: fmt.Sprintf("Config error: %v", err)}, nil
-	}
-
-	conf := configResp.Config
-
+func (b *BrainzPlaylistPlugin) updatePlaylists(ctx context.Context, conf map[string]string) (*api.SchedulerCallbackResponse, error) {
 	delimiter := conf["split"]
 	if delimiter == "" {
 		delimiter = ";"
-	}
-
-	playlistName := conf["playlistname"]
-	if playlistName == "" {
-		playlistName = "ListenBrainz Daily Jams"
 	}
 
 	subsonicUsers := strings.Split(conf["users"], delimiter)
@@ -299,36 +282,99 @@ func (b *BrainzPlaylistPlugin) OnSchedulerCallback(ctx context.Context, req *api
 	for idx := range subsonicUsers {
 		lbzUser := conf[fmt.Sprintf("users[%d]", idx)]
 
-		playlist, err := b.getPlaylists(ctx, lbzUser)
+		playlists, err := b.getPlaylists(ctx, lbzUser)
 		if err != nil {
-			err = errors.Join(err)
 			log.Printf("Failed to fetch playlists for user %s: %v", lbzUser, err)
 			continue
 		}
 
 		for sourceIdx, source := range sources {
 			plsName := conf[fmt.Sprintf("sources[%d]", sourceIdx)]
-			b.importPlaylist(ctx, source, plsName, subsonicUsers[idx], playlist)
-
+			b.importPlaylist(ctx, source, plsName, subsonicUsers[idx], playlists)
 		}
 	}
 
 	return &api.SchedulerCallbackResponse{}, nil
 }
 
-func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest) (*api.InitResponse, error) {
+func (b *BrainzPlaylistPlugin) OnSchedulerCallback(ctx context.Context, req *api.SchedulerCallbackRequest) (*api.SchedulerCallbackResponse, error) {
+	configService := config.NewConfigService()
+
 	configResp, err := configService.GetPluginConfig(ctx, &config.GetPluginConfigRequest{})
 	if err != nil {
 		log.Printf("Failed to get plugin configuration: %v", err)
-		return &api.InitResponse{Error: fmt.Sprintf("Config error: %v", err)}, nil
+		return &api.SchedulerCallbackResponse{Error: fmt.Sprintf("Config error: %v", err)}, nil
 	}
 
-	conf := configResp.Config
+	return b.updatePlaylists(ctx, configResp.Config)
+}
+
+func (b *BrainzPlaylistPlugin) initialFetch(
+	ctx context.Context,
+	sched scheduler.SchedulerService,
+	conf map[string]string,
+	users []string,
+	sources []string,
+) error {
+	now, err := sched.TimeNow(ctx, &scheduler.TimeNowRequest{})
+	if err != nil {
+		return err
+	}
+
+	nowTs, err := time.Parse(time.RFC3339Nano, now.Rfc3339Nano)
+	if err != nil {
+		return err
+	}
+
+	missing := false
+	olderThanAnHour := false
+
+userLoop:
+	for _, user := range users {
+		playlistResp, ok := b.makeSubsonicRequest(ctx, "getPlaylists", user, url.Values{})
+		if !ok {
+			return errors.New("Failed to fetch playlists on initial fetch")
+		}
+
+		for _, source := range sources {
+			pls := b.findExistingPlaylist(playlistResp, source)
+
+			if pls == nil {
+				missing = true
+				break userLoop
+			}
+
+			if nowTs.Sub(pls.Changed) > 3*time.Hour {
+				olderThanAnHour = true
+				break userLoop
+			}
+		}
+	}
+
+	if missing || olderThanAnHour {
+		log.Println("Missing or outdated playlists, fetching on initial sync")
+
+		playlistResp, err := b.updatePlaylists(ctx, conf)
+		if err != nil {
+			return err
+		}
+
+		if playlistResp.Error != "" {
+			return errors.New(playlistResp.Error)
+		}
+	} else {
+		log.Println("No missing/outdated playlists, not fetching on startup")
+	}
+
+	return nil
+}
+
+func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest) (*api.InitResponse, error) {
+	conf := req.Config
 
 	schedule, ok := conf["schedule"]
 	if !ok {
-		log.Printf("Missing required 'schedule' configuration")
-		return &api.InitResponse{Error: "Missing required 'schedule' configuration"}, nil
+		schedule = "@every 24h"
 	}
 
 	delimiter := conf["split"]
@@ -342,15 +388,15 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 		return &api.InitResponse{Error: "Missing required 'users' configuration"}, nil
 	}
 
-	split := strings.Split(usersString, delimiter)
+	usersSplit := strings.Split(usersString, delimiter)
 	userOk := true
 
-	for idx := range split {
+	for idx := range usersSplit {
 		lbzUser := conf[fmt.Sprintf("users[%d]", idx)]
 
 		if lbzUser == "" {
 			userOk = false
-			log.Printf("User %s is missing a ListenBrainz username", split[idx])
+			log.Printf("User %s is missing a ListenBrainz username", usersSplit[idx])
 		}
 	}
 
@@ -364,15 +410,18 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 		return &api.InitResponse{Error: "Missing required 'sources' configuration"}, nil
 	}
 
-	split = strings.Split(sourcesString, delimiter)
+	sourcesSplit := strings.Split(sourcesString, delimiter)
 	sourcesOk := true
+	sourceNames := make([]string, len(sourcesSplit))
 
-	for idx := range split {
+	for idx := range sourcesSplit {
 		mappedName := conf[fmt.Sprintf("sources[%d]", idx)]
 
 		if mappedName == "" {
 			sourcesOk = false
-			log.Printf("Source %s is missing a playlist name", split[idx])
+			log.Printf("Source %s is missing a playlist name", sourcesSplit[idx])
+		} else {
+			sourceNames[idx] = mappedName
 		}
 	}
 
@@ -380,7 +429,10 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 		return &api.InitResponse{Error: "One or more sources is missing a corresponding playlist name"}, nil
 	}
 
-	_, err = schedService.ScheduleRecurring(ctx, &scheduler.ScheduleRecurringRequest{
+	// SchedulerService instance for scheduling tasks.
+	schedService := scheduler.NewSchedulerService()
+
+	_, err := schedService.ScheduleRecurring(ctx, &scheduler.ScheduleRecurringRequest{
 		CronExpression: schedule,
 		ScheduleId:     peridiocSyncId,
 	})
@@ -391,6 +443,13 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 		return &api.InitResponse{Error: msg}, nil
 	}
 
+	if conf["checkonstartup"] != "false" {
+		err := b.initialFetch(ctx, schedService, conf, usersSplit, sourceNames)
+		if err != nil {
+			return &api.InitResponse{Error: err.Error()}, nil
+		}
+	}
+
 	return &api.InitResponse{}, nil
 }
 
@@ -399,7 +458,7 @@ func main() {}
 func init() {
 	// Configure logging: No timestamps, no source file/line, prepend [Discord]
 	log.SetFlags(0)
-	log.SetPrefix("[ListenBrainz Daily Playlist Fetcher]")
+	log.SetPrefix("[LBZ Playlist Fetcher]")
 
 	api.RegisterLifecycleManagement(&BrainzPlaylistPlugin{})
 	api.RegisterSchedulerCallback(&BrainzPlaylistPlugin{})

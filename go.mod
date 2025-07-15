@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/navidrome/navidrome v0.57.0
+	github.com/navidrome/navidrome v0.57.1-0.20250713183115-b69a7652b943
 )
 
 require (
