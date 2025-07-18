@@ -20,8 +20,8 @@ github.com/matoous/go-nanoid/v2 v2.1.0 h1:P64+dmq21hhWdtvZfEAofnvJULaRR1Yib0+PnU
 github.com/matoous/go-nanoid/v2 v2.1.0/go.mod h1:KlbGNQ+FhrUNIHUxZdL63t7tl4LaPkZNpUULS8H4uVM=
 github.com/microcosm-cc/bluemonday v1.0.27 h1:MpEUotklkwCSLeH+Qdx1VJgNqLlpY2KXwXFM08ygZfk=
 github.com/microcosm-cc/bluemonday v1.0.27/go.mod h1:jFi9vgW+H7c3V0lb6nR74Ib/DIB5OBs92Dimizgw2cA=
-github.com/navidrome/navidrome v0.57.0 h1:w9gypkjAQH70M3X5Wo/rnaBjc/MIKg7EuVIdQq44STU=
-github.com/navidrome/navidrome v0.57.0/go.mod h1:kcx5ewirEgRAR4SnIvkPC2dG5hItmqUeiZcL0Pd0leE=
+github.com/navidrome/navidrome v0.57.1-0.20250713183115-b69a7652b943 h1:SV+9HrKBWt2i2nz7j9d9qL3UtINFEq31auTNyRluk6I=
+github.com/navidrome/navidrome v0.57.1-0.20250713183115-b69a7652b943/go.mod h1:kcx5ewirEgRAR4SnIvkPC2dG5hItmqUeiZcL0Pd0leE=
 github.com/onsi/ginkgo/v2 v2.23.4 h1:ktYTpKJAVZnDT4VjxSbiBenUjmlL/5QkBEocaWXiQus=
 github.com/onsi/ginkgo/v2 v2.23.4/go.mod h1:Bt66ApGPBFzHyR+JO10Zbt0Gsp4uWxu5mIOTusL46e8=
 github.com/onsi/gomega v1.37.0 h1:CdEG8g0S133B4OswTDC/5XPSzE1OeP29QOioj2PID2Y=
