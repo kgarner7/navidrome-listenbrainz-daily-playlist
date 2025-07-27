@@ -96,6 +96,8 @@ In the example provided, there are two users, `user1` and `user`.
 Their ListenBrainz usernames are `lb-uzername-1` and `lb-uzername-2`, respectively.
 
 ### Optional settings
+
+#### Disable cehcking on startup
 To disable fetching on service start, pass in the following config to the plugin:
 
 ```toml
@@ -103,6 +105,19 @@ CheckOnStartup = "false"
 ```
 
 Note that this value needs to be in quotes (not a boolean).
+
+
+#### Only include songs with a specific rating
+To only import songs with a given rating, you can pass in `rating[idx]` as a comma-separated value of ratings.
+Note that `0` means no rating
+
+```toml
+Users = "user1;user2"
+"Users[0]" = "lb-uzername-1"
+
+# Exclude songs with a 1-star rating
+"Rating[0]" = "0,2,3,4,5"
+```
 
 
 ## How does it work?

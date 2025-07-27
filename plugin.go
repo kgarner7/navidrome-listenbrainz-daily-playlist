@@ -10,6 +10,7 @@ import (
 	"html"
 	"log"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -185,7 +186,13 @@ func (b *BrainzPlaylistPlugin) findExistingPlaylist(resp *responses.JsonWrapper,
 	return nil
 }
 
-func (b *BrainzPlaylistPlugin) importPlaylist(ctx context.Context, source, playlistName, subsonicUser string, playlists []overallPlaylist) {
+func (b *BrainzPlaylistPlugin) importPlaylist(
+	ctx context.Context,
+	source, playlistName,
+	subsonicUser string,
+	playlists []overallPlaylist,
+	rating map[int32]bool,
+) {
 	var id string
 	var err error
 	var listenBrainzPlaylist *lbPlaylist
@@ -226,7 +233,10 @@ func (b *BrainzPlaylistPlugin) importPlaylist(ctx context.Context, source, playl
 		}
 
 		if len(resp.Subsonic.SearchResult3.Song) > 0 {
-			songIds = append(songIds, resp.Subsonic.SearchResult3.Song[0].Id)
+			song := resp.Subsonic.SearchResult3.Song[0]
+			if rating[song.UserRating] {
+				songIds = append(songIds, resp.Subsonic.SearchResult3.Song[0].Id)
+			}
 		}
 	}
 
@@ -280,6 +290,19 @@ func (b *BrainzPlaylistPlugin) updatePlaylists(ctx context.Context, conf map[str
 	sources := strings.Split(conf["sources"], delimiter)
 
 	for idx := range subsonicUsers {
+		allowedRatings := conf[fmt.Sprintf("rating[%d]", idx)]
+		var ratings map[int32]bool
+
+		if allowedRatings != "" {
+			ratings = map[int32]bool{}
+			for item := range strings.SplitSeq(allowedRatings, ",") {
+				rating, _ := strconv.Atoi(item)
+				ratings[int32(rating)] = true
+			}
+		} else {
+			ratings = map[int32]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true}
+		}
+
 		lbzUser := conf[fmt.Sprintf("users[%d]", idx)]
 
 		playlists, err := b.getPlaylists(ctx, lbzUser)
@@ -290,7 +313,7 @@ func (b *BrainzPlaylistPlugin) updatePlaylists(ctx context.Context, conf map[str
 
 		for sourceIdx, source := range sources {
 			plsName := conf[fmt.Sprintf("sources[%d]", sourceIdx)]
-			b.importPlaylist(ctx, source, plsName, subsonicUsers[idx], playlists)
+			b.importPlaylist(ctx, source, plsName, subsonicUsers[idx], playlists, ratings)
 		}
 	}
 
@@ -327,7 +350,7 @@ func (b *BrainzPlaylistPlugin) initialFetch(
 	}
 
 	missing := false
-	olderThanAnHour := false
+	olderThanThreeHours := false
 
 userLoop:
 	for _, user := range users {
@@ -345,13 +368,13 @@ userLoop:
 			}
 
 			if nowTs.Sub(pls.Changed) > 3*time.Hour {
-				olderThanAnHour = true
+				olderThanThreeHours = true
 				break userLoop
 			}
 		}
 	}
 
-	if missing || olderThanAnHour {
+	if missing || olderThanThreeHours {
 		log.Println("Missing or outdated playlists, fetching on initial sync")
 
 		playlistResp, err := b.updatePlaylists(ctx, conf)
@@ -414,6 +437,8 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 	sourcesOk := true
 	sourceNames := make([]string, len(sourcesSplit))
 
+	ratingOk := true
+
 	for idx := range sourcesSplit {
 		mappedName := conf[fmt.Sprintf("sources[%d]", idx)]
 
@@ -423,10 +448,24 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 		} else {
 			sourceNames[idx] = mappedName
 		}
+
+		rating := conf[fmt.Sprintf("rating[%d]", idx)]
+		if rating != "" {
+			for item := range strings.SplitSeq(rating, ",") {
+				_, err := strconv.Atoi(item)
+				if err != nil {
+					ratingOk = false
+				}
+			}
+		}
 	}
 
 	if !sourcesOk {
 		return &api.InitResponse{Error: "One or more sources is missing a corresponding playlist name"}, nil
+	}
+
+	if !ratingOk {
+		return &api.InitResponse{Error: "One or more users has misconfigured `rating`. This must be a comma-separated list of ratings"}, nil
 	}
 
 	// SchedulerService instance for scheduling tasks.
