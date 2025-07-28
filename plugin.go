@@ -223,6 +223,9 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		"songCount":   []string{"1"},
 	}
 
+	missing := []string{}
+	excluded := []string{}
+
 	for _, track := range listenBrainzPlaylist.Tracks {
 		mbid := getIdentifier(track.Identifier[0])
 		params.Set("query", mbid)
@@ -236,7 +239,11 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 			song := resp.Subsonic.SearchResult3.Song[0]
 			if rating[song.UserRating] {
 				songIds = append(songIds, resp.Subsonic.SearchResult3.Song[0].Id)
+			} else {
+				excluded = append(excluded, fmt.Sprintf("%s by %s", track.Title, track.Creator))
 			}
+		} else {
+			missing = append(missing, fmt.Sprintf("%s by %s", track.Title, track.Creator))
 		}
 	}
 
@@ -261,7 +268,15 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		return
 	}
 
-	comment := fmt.Sprintf("%s&nbsp;%s", listenBrainzPlaylist.Annotation, listenBrainzPlaylist.Identifier)
+	comment := fmt.Sprintf("%s&nbsp;\n%s", listenBrainzPlaylist.Annotation, listenBrainzPlaylist.Identifier)
+
+	if len(missing) > 0 {
+		comment += fmt.Sprintf("&nbsp;\nTracks not matched by MBID: %s", strings.Join(missing, ", "))
+	}
+
+	if len(excluded) > 0 {
+		comment += fmt.Sprintf("&nbsp;\nTracks excluded by rating rule: %s", strings.Join(excluded, ", "))
+	}
 
 	if existingPlaylist != nil && existingPlaylist.Comment != comment {
 		policy := bluemonday.StrictPolicy()
