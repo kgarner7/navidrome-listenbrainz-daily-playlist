@@ -6,7 +6,7 @@ This repository contains a plugin for fetching daily playlists from [ListenBrain
 1. Your library should have MBIDs for your tracks (or at least, most of them). This plugin does song lookups _only_ using MBID.
 2. A ListenBrainz account per user you wish to fetch
 3. If you want daily playlists (`daily-jams`), you should follow the [`troi-bot`](https://listenbrainz.org/user/troi-bot/) user
-4. Navidrome >= 0.57.0. Searching by MBID was added in 0.57.0, and this will not work otherwise
+4. Navidrome >= 0.58.0. 0.58.0 introduces the ability to get current time, which is required for this version.
 
 ## Install from source
 
