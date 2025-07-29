@@ -3,7 +3,7 @@
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Import playlists from ListenBrainz",
   "website": "https://listenbrainz.org",
   "capabilities": ["LifecycleManagement", "SchedulerCallback"],
