@@ -6,7 +6,7 @@ This repository contains a plugin for fetching daily playlists from [ListenBrain
 1. Your library should have MBIDs for your tracks (or at least, most of them). This plugin does song lookups _only_ using MBID.
 2. A ListenBrainz account per user you wish to fetch
 3. If you want daily playlists (`daily-jams`), you should follow the [`troi-bot`](https://listenbrainz.org/user/troi-bot/) user
-4. Navidrome >= 0.57.0. Searching by MBID was added in 0.57.0, and this will not work otherwise
+4. Navidrome >= 0.58.0. 0.58.0 introduces the ability to get current time, which is required for this version.
 
 ## Install from source
 
@@ -64,9 +64,12 @@ This is an optional section, but it defines how multi-valued fields are split.
 The default value if not specified is `;`
 
 ### Schedule
-This is a cron schedule instructing how often to run the sync.
-Since ListenBrainz playlists are only updated once a day, it is recommended to only do it once a day.
+This is a schedule instructing how often to run the sync.
 The sample configuration `@every 24h` does it every 24 hours.
+This is the default option, so it can be omitted.
+Please note that ListenBrainz playlists are only updated once a day.
+
+Also note, when Navidrome is restarted, this plugin will check if any playlists are out of date, and if so, fetch them.
 
 ### Sources
 This specifies the source(s) to fetch from ListenBrainz, and what name to use when importing into Navidrome.
@@ -91,6 +94,31 @@ This specifies which Subsonic/Navidrome users to fetch, and provides their Liste
 
 In the example provided, there are two users, `user1` and `user`. 
 Their ListenBrainz usernames are `lb-uzername-1` and `lb-uzername-2`, respectively.
+
+### Optional settings
+
+#### Disable cehcking on startup
+To disable fetching on service start, pass in the following config to the plugin:
+
+```toml
+CheckOnStartup = "false"
+```
+
+Note that this value needs to be in quotes (not a boolean).
+
+
+#### Only include songs with a specific rating
+To only import songs with a given rating, you can pass in `rating[idx]` as a comma-separated value of ratings.
+Note that `0` means no rating
+
+```toml
+Users = "user1;user2"
+"Users[0]" = "lb-uzername-1"
+
+# Exclude songs with a 1-star rating
+"Rating[0]" = "0,2,3,4,5"
+```
+
 
 ## How does it work?
 This plugin relies on a special quick of Navidrome, wherein using the `/rest/search3` endpoint by MBID will return exact matches.
