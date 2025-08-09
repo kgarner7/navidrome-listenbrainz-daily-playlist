@@ -35,7 +35,9 @@ var (
 	subsonicService = subsonicapi.NewSubsonicAPIService()
 )
 
-type BrainzPlaylistPlugin struct{}
+type BrainzPlaylistPlugin struct {
+	artistMbidToId map[string]string
+}
 
 type listenBrainzResponse struct {
 	Code          int               `json:"code"`
@@ -69,8 +71,6 @@ type plsExtension struct {
 
 type playlistExtension struct {
 	AdditionalMetadata additionalMeta `json:"additional_metadata"`
-	Collaborators      []string       `json:"collaborators"`
-	CreatedFor         string         `json:"created_for"`
 	LastModified       time.Time      `json:"last_modified_at"`
 	Public             bool           `json:"public"`
 }
@@ -84,7 +84,16 @@ type algoMeta struct {
 }
 
 type lbTrack struct {
-	Creator    string   `json:"creator"`
+	Creator   string `json:"creator"`
+	Extension struct {
+		Track struct {
+			AdditionalMetadata struct {
+				Artists []struct {
+					MBID string `json:"artist_mbid"`
+				} `json:"artists"`
+			} `json:"additional_metadata"`
+		} `json:"https://musicbrainz.org/doc/jspf#track"`
+	} `json:"extension"`
 	Identifier []string `json:"identifier"`
 	Title      string   `json:"title"`
 }
@@ -150,7 +159,7 @@ func (b *BrainzPlaylistPlugin) getPlaylist(ctx context.Context, id string) (*lbP
 	return result.Playlist, nil
 }
 
-func (b *BrainzPlaylistPlugin) makeSubsonicRequest(ctx context.Context, endpoint, subsonicUser string, params url.Values) (*responses.JsonWrapper, bool) {
+func (b *BrainzPlaylistPlugin) makeSubsonicRequest(ctx context.Context, endpoint, subsonicUser string, params *url.Values) (*responses.JsonWrapper, bool) {
 	subsonicResp, err := subsonicService.Call(ctx, &subsonicapi.CallRequest{
 		Url: fmt.Sprintf("/rest/%s?u=%s&%s", endpoint, subsonicUser, params.Encode()),
 	})
@@ -186,9 +195,93 @@ func (b *BrainzPlaylistPlugin) findExistingPlaylist(resp *responses.JsonWrapper,
 	return nil
 }
 
+func (b *BrainzPlaylistPlugin) findArtistIdByMbid(
+	ctx context.Context,
+	subsonicUser string,
+	mbid string,
+) string {
+	existing, ok := b.artistMbidToId[mbid]
+	if ok {
+		return existing
+	}
+
+	artistParams := url.Values{
+		"artistCount": []string{"1"},
+		"albumCount":  []string{"0"},
+		"songCount":   []string{"0"},
+		"query":       []string{mbid},
+	}
+
+	resp, ok := b.makeSubsonicRequest(ctx, "search3", subsonicUser, &artistParams)
+	if !ok {
+		return ""
+	}
+
+	var id string
+
+	if len(resp.Subsonic.SearchResult3.Artist) > 0 {
+		id = resp.Subsonic.SearchResult3.Artist[0].Id
+	} else {
+		id = ""
+	}
+
+	b.artistMbidToId[mbid] = id
+	return id
+}
+
+func (b *BrainzPlaylistPlugin) fallbackLookup(
+	ctx context.Context,
+	subsonicUser string,
+	track *lbTrack,
+) *responses.Child {
+	artistIds := map[string]bool{}
+
+	for _, artist := range track.Extension.Track.AdditionalMetadata.Artists {
+		id := b.findArtistIdByMbid(ctx, subsonicUser, artist.MBID)
+		if id == "" {
+			return nil
+		}
+
+		artistIds[id] = true
+	}
+
+	trackParams := url.Values{
+		"artistCount": []string{"0"},
+		"albumCount":  []string{"0"},
+		"songCount":   []string{"1"},
+		"query":       []string{track.Title},
+	}
+
+	resp, ok := b.makeSubsonicRequest(ctx, "search3", subsonicUser, &trackParams)
+	if !ok {
+		return nil
+	}
+
+	for _, subsonicTrack := range resp.Subsonic.SearchResult3.Song {
+		if subsonicTrack.Title == track.Title && len(artistIds) == len(subsonicTrack.Artists) {
+			missing := false
+
+			for _, artist := range subsonicTrack.Artists {
+				found := artistIds[artist.Id]
+
+				if !found {
+					missing = true
+				}
+			}
+
+			if !missing {
+				return &subsonicTrack
+			}
+		}
+	}
+
+	return nil
+}
+
 func (b *BrainzPlaylistPlugin) importPlaylist(
 	ctx context.Context,
-	source, playlistName,
+	source string,
+	playlistName string,
 	subsonicUser string,
 	playlists []overallPlaylist,
 	rating map[int32]bool,
@@ -217,7 +310,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 
 	songIds := []string{}
 
-	params := url.Values{
+	trackParams := url.Values{
 		"artistCount": []string{"0"},
 		"albumCount":  []string{"0"},
 		"songCount":   []string{"1"},
@@ -228,17 +321,24 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 
 	for _, track := range listenBrainzPlaylist.Tracks {
 		mbid := getIdentifier(track.Identifier[0])
-		params.Set("query", mbid)
+		trackParams.Set("query", mbid)
 
-		resp, ok := b.makeSubsonicRequest(ctx, "search3", subsonicUser, params)
+		resp, ok := b.makeSubsonicRequest(ctx, "search3", subsonicUser, &trackParams)
 		if !ok {
 			continue
 		}
 
+		var song *responses.Child
+
 		if len(resp.Subsonic.SearchResult3.Song) > 0 {
-			song := resp.Subsonic.SearchResult3.Song[0]
+			song = &resp.Subsonic.SearchResult3.Song[0]
+		} else {
+			song = b.fallbackLookup(ctx, subsonicUser, &track)
+		}
+
+		if song != nil {
 			if rating[song.UserRating] {
-				songIds = append(songIds, resp.Subsonic.SearchResult3.Song[0].Id)
+				songIds = append(songIds, song.Id)
 			} else {
 				excluded = append(excluded, fmt.Sprintf("%s by %s", track.Title, track.Creator))
 			}
@@ -247,7 +347,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		}
 	}
 
-	resp, ok := b.makeSubsonicRequest(ctx, "getPlaylists", subsonicUser, url.Values{})
+	resp, ok := b.makeSubsonicRequest(ctx, "getPlaylists", subsonicUser, &url.Values{})
 	if !ok {
 		return
 	}
@@ -263,7 +363,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		createPlaylistParams.Add("name", playlistName)
 	}
 
-	_, ok = b.makeSubsonicRequest(ctx, "createPlaylist", subsonicUser, createPlaylistParams)
+	_, ok = b.makeSubsonicRequest(ctx, "createPlaylist", subsonicUser, &createPlaylistParams)
 	if !ok {
 		return
 	}
@@ -286,7 +386,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 			"comment":    []string{sanitized},
 		}
 
-		_, ok = b.makeSubsonicRequest(ctx, "updatePlaylist", subsonicUser, updatePlaylistParams)
+		_, ok = b.makeSubsonicRequest(ctx, "updatePlaylist", subsonicUser, &updatePlaylistParams)
 		if !ok {
 			return
 		}
@@ -296,6 +396,8 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 }
 
 func (b *BrainzPlaylistPlugin) updatePlaylists(ctx context.Context, conf map[string]string) (*api.SchedulerCallbackResponse, error) {
+	b.artistMbidToId = map[string]string{}
+
 	delimiter := conf["split"]
 	if delimiter == "" {
 		delimiter = ";"
@@ -369,7 +471,7 @@ func (b *BrainzPlaylistPlugin) initialFetch(
 
 userLoop:
 	for _, user := range users {
-		playlistResp, ok := b.makeSubsonicRequest(ctx, "getPlaylists", user, url.Values{})
+		playlistResp, ok := b.makeSubsonicRequest(ctx, "getPlaylists", user, &url.Values{})
 		if !ok {
 			return errors.New("Failed to fetch playlists on initial fetch")
 		}
@@ -512,7 +614,7 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 func main() {}
 
 func init() {
-	// Configure logging: No timestamps, no source file/line, prepend [Discord]
+	// Configure logging: No timestamps, no source file/line, prepend
 	log.SetFlags(0)
 	log.SetPrefix("[LBZ Playlist Fetcher]")
 

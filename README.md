@@ -3,7 +3,7 @@
 This repository contains a plugin for fetching daily playlists from [ListenBrainz](https://listenbrainz.org/)
 
 ## Requirements
-1. Your library should have MBIDs for your tracks (or at least, most of them). This plugin does song lookups _only_ using MBID.
+1. Your library should have MBIDs for your tracks (or at least, most of them). This plugin does song lookups _only_ using MBID. For better fallback, having artist MBIDs will also help.
 2. A ListenBrainz account per user you wish to fetch
 3. If you want daily playlists (`daily-jams`), you should follow the [`troi-bot`](https://listenbrainz.org/user/troi-bot/) user
 4. Navidrome >= 0.58.0. 0.58.0 introduces the ability to get current time, which is required for this version.
@@ -123,6 +123,15 @@ Users = "user1;user2"
 ## How does it work?
 This plugin relies on a special quick of Navidrome, wherein using the `/rest/search3` endpoint by MBID will return exact matches.
 So, for most matches, you will want to make sure all your files have MBIDs.
+
+In the event that there is no match by track MBID (for example, ListenBrainz returns a _different_ track ID than the one you have), then the lookup process is as follows:
+1. Map every artist MBID in the track provided by ListenBrainz to a Subsonic artist ID. This is similarly done through `/rest/search3`, but for artists instead of tracks.
+2. Search for tracks with the name given by ListenBrainz.
+3. Find a track whose name is an **exact match** of the ListenBrainz track, and whose artists **all** match the artist IDS found in step 1.
+
+This fallback is of course not perfect.
+If your track name doesn't match **exactly** what ListenBrainz provides, or one or more of the artists doesn't have an MBID, then it will not be found.
+
 
 ## Permissions
 - `config`: This plugin needs to read the config to determine what users to fetch, and so on
