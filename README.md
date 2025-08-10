@@ -119,6 +119,14 @@ Users = "user1;user2"
 "Rating[0]" = "0,2,3,4,5"
 ```
 
+#### Specify number of tracks to fetch with fallback
+```toml
+FallbackCount = "15"
+```
+
+When searching by title when no specific match is found, this limits the number of potential track matches to search by name.
+By default, this value is 15, but may be decreased to 1 or increased up to 500.
+
 
 ## How does it work?
 This plugin relies on a special quick of Navidrome, wherein using the `/rest/search3` endpoint by MBID will return exact matches.
