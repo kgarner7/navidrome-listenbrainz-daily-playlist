@@ -29,5 +29,5 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: plugin
+          name: listenbrainz-daily-playlist.ndp
           path: listenbrainz-daily-playlist.ndp
