@@ -21,7 +21,7 @@ jobs:
         run: go mod download
 
       - name: Build plugin
-        run: OOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm plugin.go
+        run: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm plugin.go
 
       - name: Create packate
         run: zip listenbrainz-daily-playlist.ndp plugin.wasm manifest.json README.md LICENSE.md
