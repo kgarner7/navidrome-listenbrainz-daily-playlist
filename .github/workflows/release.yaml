@@ -1,5 +1,4 @@
 name: "Pipeline: Release"
-name: "Pipeline: Release"
 on:
   push:
     tags:
