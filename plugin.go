@@ -594,7 +594,7 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 		return &api.InitResponse{Error: "One or more users has misconfigured `rating`. This must be a comma-separated list of ratings"}, nil
 	}
 
-	if conf["fallbackSearch"] != "" {
+	if conf["fallbackcount"] != "" {
 		value, err := strconv.Atoi(conf["fallbackcount"])
 		if err != nil {
 			return &api.InitResponse{Error: "`FallbackCount` is not a valid number"}, nil
