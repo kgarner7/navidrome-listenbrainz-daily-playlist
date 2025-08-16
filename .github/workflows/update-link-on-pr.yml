@@ -1,7 +1,7 @@
 name: Add download link to PR
 on:
   workflow_run:
-    workflows: ['Pipeline: Package']
+    workflows: ['Pipeline: PR']
     types: [completed]
 jobs:
   pr_comment:

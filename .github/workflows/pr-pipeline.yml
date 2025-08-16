@@ -1,0 +1,28 @@
+name: "Pipeline: PR"
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out latest code
+        uses: actions/checkout@v5
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build plugin
+        run: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm plugin.go
+
+      - name: Create packate
+        run: zip listenbrainz-daily-playlist.ndp plugin.wasm manifest.json README.md LICENSE.md
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: listenbrainz-daily-playlist.ndp
+          path: listenbrainz-daily-playlist.ndp

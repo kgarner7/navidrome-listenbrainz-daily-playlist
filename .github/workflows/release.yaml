@@ -1,17 +1,12 @@
-name: "Pipeline: Package"
+name: "Pipeline: Release"
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
-  pull_request:
-    branches:
-      - main
 
 jobs:
   build:
-    name: Build
+    name: Release
     runs-on: ubuntu-latest
     steps:
       - name: Check out latest code
@@ -26,8 +21,9 @@ jobs:
       - name: Create packate
         run: zip listenbrainz-daily-playlist.ndp plugin.wasm manifest.json README.md LICENSE.md
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Generate draft release
+        uses: softprops/action-gh-release@v2
         with:
-          name: listenbrainz-daily-playlist.ndp
-          path: listenbrainz-daily-playlist.ndp
+          draft: true
+          files: listenbrainz-daily-playlist.ndp
+          generate_release_notes: true
