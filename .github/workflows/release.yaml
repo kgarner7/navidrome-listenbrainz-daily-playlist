@@ -1,5 +1,5 @@
-name: "Pipeline: Package"
-name: "Pipeline: Package"
+name: "Pipeline: Release"
+name: "Pipeline: Release"
 on:
   push:
     tags:
