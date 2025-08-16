@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    name: Build
+    name: Pipeline
     runs-on: ubuntu-latest
     steps:
       - name: Check out latest code
