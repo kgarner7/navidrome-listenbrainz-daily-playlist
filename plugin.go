@@ -233,6 +233,7 @@ func (b *BrainzPlaylistPlugin) fallbackLookup(
 	ctx context.Context,
 	subsonicUser string,
 	track *lbTrack,
+	fallbackCount string,
 ) *responses.Child {
 	artistIds := map[string]bool{}
 
@@ -248,7 +249,7 @@ func (b *BrainzPlaylistPlugin) fallbackLookup(
 	trackParams := url.Values{
 		"artistCount": []string{"0"},
 		"albumCount":  []string{"0"},
-		"songCount":   []string{"1"},
+		"songCount":   []string{fallbackCount}, // I do not know what number is reasonable for multiple matches. Maybe I'll make it configurable
 		"query":       []string{track.Title},
 	}
 
@@ -285,6 +286,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	subsonicUser string,
 	playlists []overallPlaylist,
 	rating map[int32]bool,
+	fallbackCount string,
 ) {
 	var id string
 	var err error
@@ -333,7 +335,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		if len(resp.Subsonic.SearchResult3.Song) > 0 {
 			song = &resp.Subsonic.SearchResult3.Song[0]
 		} else {
-			song = b.fallbackLookup(ctx, subsonicUser, &track)
+			song = b.fallbackLookup(ctx, subsonicUser, &track, fallbackCount)
 		}
 
 		if song != nil {
@@ -406,6 +408,13 @@ func (b *BrainzPlaylistPlugin) updatePlaylists(ctx context.Context, conf map[str
 	subsonicUsers := strings.Split(conf["users"], delimiter)
 	sources := strings.Split(conf["sources"], delimiter)
 
+	var fallbackCount string
+	if conf["fallbackcount"] != "" {
+		fallbackCount = conf["fallbackcount"]
+	} else {
+		fallbackCount = "15"
+	}
+
 	for idx := range subsonicUsers {
 		allowedRatings := conf[fmt.Sprintf("rating[%d]", idx)]
 		var ratings map[int32]bool
@@ -430,7 +439,7 @@ func (b *BrainzPlaylistPlugin) updatePlaylists(ctx context.Context, conf map[str
 
 		for sourceIdx, source := range sources {
 			plsName := conf[fmt.Sprintf("sources[%d]", sourceIdx)]
-			b.importPlaylist(ctx, source, plsName, subsonicUsers[idx], playlists, ratings)
+			b.importPlaylist(ctx, source, plsName, subsonicUsers[idx], playlists, ratings, fallbackCount)
 		}
 	}
 
@@ -583,6 +592,17 @@ func (b *BrainzPlaylistPlugin) OnInit(ctx context.Context, req *api.InitRequest)
 
 	if !ratingOk {
 		return &api.InitResponse{Error: "One or more users has misconfigured `rating`. This must be a comma-separated list of ratings"}, nil
+	}
+
+	if conf["fallbackcount"] != "" {
+		value, err := strconv.Atoi(conf["fallbackcount"])
+		if err != nil {
+			return &api.InitResponse{Error: "`FallbackCount` is not a valid number"}, nil
+		}
+
+		if value < 1 || value > 500 {
+			return &api.InitResponse{Error: "`FallbackCount` must be between 1 and 500 (inclusive)"}, nil
+		}
 	}
 
 	// SchedulerService instance for scheduling tasks.
