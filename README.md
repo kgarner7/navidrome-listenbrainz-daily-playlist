@@ -8,19 +8,27 @@ This repository contains a plugin for fetching daily playlists from [ListenBrain
 3. If you want daily playlists (`daily-jams`), you should follow the [`troi-bot`](https://listenbrainz.org/user/troi-bot/) user
 4. Navidrome >= 0.58.0. 0.58.0 introduces the ability to get current time, which is required for this version.
 
-## Install from source
+## Install instructions
+
+### From GitHub Release
+
+You can download the `listenbrainz-daily-playlist.ndp` from the latest release and then run `navidrome plugin install listenbrainz-daily-playlist.ndp`.
+Make sure to run this command as your navidrome user.
+This will unzip the package, and install it automatically in your plugin directory.
+
+### From source
 
 Requirements:
 - `go` 1.24
 
-### Build WASM plugin
+#### Build WASM plugin
 
 ```bash
 go mod download
 GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm plugin.go
 ```
 
-### Package plugin
+#### Package plugin
 
 Copy the following files: `manifest.json` and `plugin.wasm`. 
 Put them in a directory in your Navidrome `Plugins.Folder`.
