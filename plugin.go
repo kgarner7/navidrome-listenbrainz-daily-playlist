@@ -180,6 +180,11 @@ func (b *BrainzPlaylistPlugin) makeSubsonicRequest(ctx context.Context, endpoint
 		return nil, false
 	}
 
+	if decoded.Subsonic.Status != "ok" {
+		log.Printf("Subsonic status is not ok: (%d)%s", decoded.Subsonic.Error.Code, decoded.Subsonic.Error.Message)
+		return nil, false
+	}
+
 	return &decoded, true
 }
 
