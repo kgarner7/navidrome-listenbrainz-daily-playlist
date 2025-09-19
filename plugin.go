@@ -360,19 +360,21 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	}
 
 	existingPlaylist := b.findExistingPlaylist(resp, playlistName)
-	createPlaylistParams := url.Values{
-		"songId": songIds,
-	}
+	if len(songIds) != 0 || existingPlaylist != nil {
+		createPlaylistParams := url.Values{
+			"songId": songIds,
+		}
 
-	if existingPlaylist != nil {
-		createPlaylistParams.Add("playlistId", existingPlaylist.Id)
-	} else {
-		createPlaylistParams.Add("name", playlistName)
-	}
+		if existingPlaylist != nil {
+			createPlaylistParams.Add("playlistId", existingPlaylist.Id)
+		} else {
+			createPlaylistParams.Add("name", playlistName)
+		}
 
-	_, ok = b.makeSubsonicRequest(ctx, "createPlaylist", subsonicUser, &createPlaylistParams)
-	if !ok {
-		return
+		_, ok = b.makeSubsonicRequest(ctx, "createPlaylist", subsonicUser, &createPlaylistParams)
+		if !ok {
+			return
+		}
 	}
 
 	comment := fmt.Sprintf("%s&nbsp;\n%s", listenBrainzPlaylist.Annotation, listenBrainzPlaylist.Identifier)
@@ -388,9 +390,17 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	if existingPlaylist != nil && existingPlaylist.Comment != comment {
 		policy := bluemonday.StrictPolicy()
 		sanitized := html.UnescapeString(policy.Sanitize(comment))
+
 		updatePlaylistParams := url.Values{
 			"playlistId": []string{existingPlaylist.Id},
 			"comment":    []string{sanitized},
+		}
+
+		if len(songIds) == 0 {
+			for i := range existingPlaylist.SongCount {
+				updatePlaylistParams.Add("songIndexToRemove", strconv.Itoa(int(i)))
+			}
+			log.Printf("No matching files found for playlist %s", existingPlaylist.Name)
 		}
 
 		_, ok = b.makeSubsonicRequest(ctx, "updatePlaylist", subsonicUser, &updatePlaylistParams)
