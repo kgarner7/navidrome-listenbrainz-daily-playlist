@@ -500,7 +500,6 @@ const DEFAULT_SOURCES = `{
 	"weekly-jams": "ListenBrainz Weekly Jams"
 }`
 
-//export nd_on_init
 func (b *BrainzPlaylistPlugin) OnInit() error {
 	schedule, ok := pdk.GetConfig("schedule")
 	if !ok {
