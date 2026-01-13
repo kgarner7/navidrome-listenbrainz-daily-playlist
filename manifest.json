@@ -1,28 +1,24 @@
 {
-  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/schema/manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/new-plugins/plugins/manifest-schema.json",
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
   "version": "2.0.4",
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
-  "capabilities": ["LifecycleManagement", "SchedulerCallback"],
   "permissions": {
-    "config": {
-      "reason": "To get playlist sync schedule and configured users"
-    },
     "http": {
       "reason": "To fetch metadata from listenBrainz (and labs)",
-      "allowedUrls": {
-        "https://api.listenbrainz.org/*": ["GET"]
-      }
+      "requiredHosts": ["api.listenbrainz.org"]
     },
     "scheduler": {
       "reason": "To schedule periodic daily playlist sync"
     },
     "subsonicapi": {
-        "reason": "Requires subsonic API to serach for songs and create/update playlists on behalf of users",
-        "allowAdmins": true
+      "reason": "Requires subsonic API to search for songs and create/update playlists on behalf of users"
+    },
+    "users": {
+      "reason": "Requires user access for subsonic API"
     }
   }
 }

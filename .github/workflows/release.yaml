@@ -15,11 +15,17 @@ jobs:
       - name: Check out latest code
         uses: actions/checkout@v5
 
+      - name: Install tinygo and dependencies
+        run: |
+          wget https://github.com/tinygo-org/tinygo/releases/download/v0.40.1/tinygo_0.40.1_amd64.deb
+          sudo dpkg -i tinygo_0.40.1_amd64.deb
+          sudo apt install -y binaryen
+
       - name: Download dependencies
         run: go mod download
 
       - name: Build plugin
-        run: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm plugin.go
+        run: tinygo build -o plugin.wasm -target wasip1 -buildmode=c-shared .
 
       - name: Create packate
         run: zip listenbrainz-daily-playlist.ndp plugin.wasm manifest.json README.md LICENSE.md
