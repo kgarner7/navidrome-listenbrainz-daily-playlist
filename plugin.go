@@ -444,7 +444,7 @@ func getConfig() (map[string]userConfig, int, error) {
 	return userMapping, fallbackCount, nil
 }
 
-func (b *BrainzPlaylistPlugin) OnSchedulerCallback(req scheduler.SchedulerCallbackRequest) error {
+func (b *BrainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
 	userMapping, fallbackCount, err := getConfig()
 	if err != nil {
 		return err
