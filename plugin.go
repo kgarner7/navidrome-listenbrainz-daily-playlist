@@ -23,7 +23,12 @@ import (
 const (
 	lbzEndpoint    = "https://api.listenbrainz.org/1"
 	peridiocSyncId = "listenbrainz"
-	userAgent      = "NavidromePlaylistImporter/0.2"
+	userAgent      = "NavidromePlaylistImporter/3.0"
+	initialFetchId = "initial-fetch"
+)
+
+var (
+	allowedSchedules = map[string]bool{"@every 24h": true, "@every 48h": true, "@weekly": true, "@monthly": true}
 )
 
 type source struct {
@@ -364,7 +369,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	comment := fmt.Sprintf("%s&nbsp;\n%s", listenBrainzPlaylist.Annotation, listenBrainzPlaylist.Identifier)
 
 	if len(missing) > 0 {
-		comment += fmt.Sprintf("&nbsp;\nTracks not matched by MBID: %s", strings.Join(missing, ", "))
+		comment += fmt.Sprintf("&nbsp;\nTracks not matched by track MBID or track name + artist MBIDs: %s", strings.Join(missing, ", "))
 	}
 
 	if len(excluded) > 0 {
@@ -462,16 +467,6 @@ func getConfig() ([]userConfig, int, error) {
 	return userMapping, fallbackCount, nil
 }
 
-func (b *BrainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
-	userMapping, fallbackCount, err := getConfig()
-	if err != nil {
-		return err
-	}
-
-	b.updatePlaylists(userMapping, fallbackCount)
-	return nil
-}
-
 func (b *BrainzPlaylistPlugin) initialFetch(
 	users []userConfig,
 	fallbackCount int,
@@ -513,13 +508,33 @@ userLoop:
 	return nil
 }
 
+func (b *BrainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
+	userMapping, fallbackCount, err := getConfig()
+	if err != nil {
+		return err
+	}
+
+	if req.Payload == initialFetchId {
+		b.initialFetch(userMapping, fallbackCount)
+	} else {
+		b.updatePlaylists(userMapping, fallbackCount)
+	}
+
+	return nil
+}
+
 func (b *BrainzPlaylistPlugin) OnInit() error {
 	schedule, ok := pdk.GetConfig("schedule")
 	if !ok {
 		schedule = "@every 24h"
 	}
 
-	userMapping, fallbackCount, err := getConfig()
+	_, ok = allowedSchedules[schedule]
+	if !ok {
+		return fmt.Errorf("%s is not an allowed sync schedule", schedule)
+	}
+
+	_, _, err := getConfig()
 	if err != nil {
 		return err
 	}
@@ -532,9 +547,9 @@ func (b *BrainzPlaylistPlugin) OnInit() error {
 	checkOnStartup, ok := pdk.GetConfig("checkOnStartup")
 
 	if !ok || checkOnStartup != "false" {
-		err := b.initialFetch(userMapping, fallbackCount)
+		_, err := host.SchedulerScheduleOneTime(1, initialFetchId, "initialFetchId")
 		if err != nil {
-			pdk.Log(pdk.LogWarn, fmt.Sprintf("Failed to do initial sync. Proceeding anyway %w", err))
+			pdk.Log(pdk.LogWarn, fmt.Sprintf("Failed to do initial sync. Proceeding anyway %v", err))
 		}
 	}
 

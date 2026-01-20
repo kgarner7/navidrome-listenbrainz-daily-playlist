@@ -3,7 +3,7 @@
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
-  "version": "2.0.4",
+  "version": "3.0.0",
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
   "permissions": {
@@ -61,14 +61,14 @@
                   "properties": {
                     "sourcePatch": {
                       "type": "string",
-                      "title": "Source patch",
-                      "description": "The source patch as declared by ListenBrainz. This includes: weekly-exploration, weekly-jams, daily-jams",
+                      "title": "Source",
+                      "description": "The source as declared by ListenBrainz. This includes: weekly-exploration, weekly-jams, daily-jams",
                       "minLength": 1
                     },
                     "playlistName": {
                       "type": "string",
-                      "title": "The playlist name to be imported",
-                      "description": "The name of the playlist as it will be created/updated for the user",
+                      "title": "Playlist name to be imported",
+                      "description": "The name of the playlist as it will be created/updated for the user. This playlist will be overridden",
                       "minLength": 1
                     }
                   },
@@ -99,9 +99,12 @@
         "schedule": {
           "type": "string",
           "title": "Schedule to fetch playlists",
-          "description": "When to fetch playlists (cron syntax). Please only adjust it to be less frequent",
-          "_comment": "https://regex101.com/r/RtLgqG/2",
-          "pattern": "^((((\\d+,)+\\d+|(\\d+(\/|-|#)\\d+)|\\d+L?|\\*(\/\\d+)?|L(-\\d+)?|\\?|[A-Z]{3}(-[A-Z]{3})?) ?){5})|(@(annually|yearly|monthly|weekly|daily|hourly|reboot))|(@every (\\d+(ns|us|µs|ms|s|m|h))+)$",
+          "oneOf": [
+            { "const": "@every 24h", "title": "Daily" },
+            { "const": "@every 48h", "title": "Every 2 days" },
+            { "const": "@weekly", "title": "Weekly" },
+            { "const": "@monthly", "title": "Monthly" }
+          ],
           "default": "@every 24h"
         },
         "checkOnStartup": {
@@ -170,12 +173,16 @@
           }
         },
         {
-          "type": "Control",
-          "scope": "#/properties/schedule"
-        },
-        {
-          "type": "Control",
-          "scope": "#/properties/fallbackCount"
+          "type": "HorizontalLayout",
+            "elements": [
+            {
+              "type": "Control",
+              "scope": "#/properties/schedule"
+            },        {
+              "type": "Control",
+              "scope": "#/properties/fallbackCount"
+            }
+          ]
         },
         {
           "type": "Control",
