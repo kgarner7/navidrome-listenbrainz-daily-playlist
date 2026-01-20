@@ -130,6 +130,7 @@
           "type": "Control",
           "scope": "#/properties/users",
           "options": {
+            "elementLabelProp": "username",
             "detail": {
               "type": "VerticalLayout",
               "elements": [
@@ -145,6 +146,7 @@
                   "type": "Control",
                   "scope": "#/properties/sources",
                   "options": {
+                    "elementLabelProp": "sourcePatch",
                     "detail": {
                       "type": "HorizontalLayout",
                       "elements": [
