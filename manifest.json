@@ -28,6 +28,7 @@
         "users": {
           "type": "array",
           "title": "User configurations",
+          "minItems": 1,
           "description": "ListenBrainz configurations for each user",
           "default": [{ "ratings": ["0", "1", "2", "3", "4", "5"]}],
           "items": {
@@ -48,6 +49,7 @@
               "sources": {
                 "type": "array",
                 "title": "Playlists to import",
+                "minItems": 1,
                 "default": [
                   {
                     "sourcePatch": "daily-jams", "playlistName": "ListenBrainz Daily Jams"
@@ -77,6 +79,7 @@
               },
               "ratings": {
                 "type": "array",
+                "minItems": 1,
                 "title": "Ratings",
                 "description": "Select multiple ratings",
                 "uniqueItems": true,
