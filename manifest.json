@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/new-plugins/plugins/manifest-schema.json",
+  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/plugins-jsonforms/plugins/manifest-schema.json",
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
@@ -19,6 +19,168 @@
     },
     "users": {
       "reason": "Requires user access for subsonic API"
+    }
+  },
+  "config": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "users": {
+          "type": "array",
+          "title": "User configurations",
+          "description": "ListenBrainz configurations for each user",
+          "default": [{ "ratings": ["0", "1", "2", "3", "4", "5"]}],
+          "items": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string",
+                "title": "Navidrome Username",
+                "description": "The Navidrome username to associate with this ListenBrainz username",
+                "minLength": 1
+              },
+              "lbzUsername": {
+                "type": "string",
+                "title": "ListenBrainz username",
+                "description": "The ListenBrainz username to associate with this user",
+                "minLength": 1
+              },
+              "sources": {
+                "type": "array",
+                "title": "Playlists to import",
+                "default": [
+                  {
+                    "sourcePatch": "daily-jams", "playlistName": "ListenBrainz Daily Jams"
+                  },
+                  {
+                    "sourcePatch": "weekly-jams", "playlistName": "ListenBrainz Weekly Jams"
+                  }
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourcePatch": {
+                      "type": "string",
+                      "title": "Source patch",
+                      "description": "The source patch as declared by ListenBrainz. This includes: weekly-exploration, weekly-jams, daily-jams",
+                      "minLength": 1
+                    },
+                    "playlistName": {
+                      "type": "string",
+                      "title": "The playlist name to be imported",
+                      "description": "The name of the playlist as it will be created/updated for the user",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              "ratings": {
+                "type": "array",
+                "title": "Ratings",
+                "description": "Select multiple ratings",
+                "uniqueItems": true,
+                "default": ["0", "1", "2", "3", "4", "5"],
+                "items": {
+                  "oneOf": [
+                    { "const": "0", "title": "No rating" },
+                    { "const": "1", "title": "1 star" },
+                    { "const": "2", "title": "2 stars" },
+                    { "const": "3", "title": "3 stars" },
+                    { "const": "4", "title": "4 stars" },
+                    { "const": "5", "title": "5 stars" }
+                  ]
+                }
+              }
+            },
+            "required": ["lbzUsername", "sources", "username"]
+          }
+        },
+        "schedule": {
+          "type": "string",
+          "title": "Schedule to fetch playlists",
+          "description": "When to fetch playlists (cron syntax). Please only adjust it to be less frequent",
+          "_comment": "https://regex101.com/r/RtLgqG/2",
+          "pattern": "^((((\\d+,)+\\d+|(\\d+(\/|-|#)\\d+)|\\d+L?|\\*(\/\\d+)?|L(-\\d+)?|\\?|[A-Z]{3}(-[A-Z]{3})?) ?){5})|(@(annually|yearly|monthly|weekly|daily|hourly|reboot))|(@every (\\d+(ns|us|µs|ms|s|m|h))+)$",
+          "default": "@every 24h"
+        },
+        "checkOnStartup": {
+          "type": "boolean",
+          "title": "Check for out of date playlists on plugin start",
+          "default": true
+        },
+        "fallbackCount": {
+          "type": "integer",
+          "title": "Fallback search count",
+          "description": "Normally, this plugin tries to match tracks by MusicBrainz ID. When that fails, this count specifies the number of tracks to try to match by artist/title",
+          "default": 15,
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": ["users"]
+    },
+    "uiSchema": {
+      "type": "VerticalLayout",
+      "elements": [
+        {
+          "type": "Control",
+          "scope": "#/properties/users",
+          "options": {
+            "detail": {
+              "type": "VerticalLayout",
+              "elements": [
+                {
+                  "type": "Control",
+                  "scope": "#/properties/username"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/lbzUsername"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/sources",
+                  "options": {
+                    "detail": {
+                      "type": "HorizontalLayout",
+                      "elements": [
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/sourcePatch"
+                        },
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/playlistName"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "Label",
+                  "text": "Include tracks with this rating. Tracks with a rating not selected will be excluded from matching"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/ratings"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/schedule"
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/fallbackCount"
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/checkOnStartup"
+        }
+      ]
     }
   }
 }

@@ -26,10 +26,16 @@ const (
 	userAgent      = "NavidromePlaylistImporter/0.2"
 )
 
+type source struct {
+	SourcePatch  string `json:"sourcePatch"`
+	PlaylistName string `json:"playlistName"`
+}
+
 type userConfig struct {
-	Rating   *[]int32          `json:"rating,omitempty"`
-	Sources  map[string]string `json:"sources"`
-	Username string            `json:"username"`
+	NDUsername  string   `json:"username"`
+	LbzUsername string   `json:"lbzUsername"`
+	Ratings     []string `json:"ratings,omitempty"`
+	Sources     []source `json:"sources"`
 }
 
 type BrainzPlaylistPlugin struct {
@@ -100,8 +106,8 @@ func getIdentifier(url string) string {
 	return split[len(split)-1]
 }
 
-func (b *BrainzPlaylistPlugin) getPlaylists(user string) ([]overallPlaylist, error) {
-	req := pdk.NewHTTPRequest(pdk.MethodGet, fmt.Sprintf("%s/user/%s/playlists/createdfor", lbzEndpoint, user))
+func (b *BrainzPlaylistPlugin) getPlaylists(lbzUsername string) ([]overallPlaylist, error) {
+	req := pdk.NewHTTPRequest(pdk.MethodGet, fmt.Sprintf("%s/user/%s/playlists/createdfor", lbzEndpoint, lbzUsername))
 	req.SetHeader("Accept", "application/json")
 	req.SetHeader("User-Agent", userAgent)
 	resp := req.Send()
@@ -257,8 +263,7 @@ func (b *BrainzPlaylistPlugin) fallbackLookup(
 }
 
 func (b *BrainzPlaylistPlugin) importPlaylist(
-	source string,
-	playlistName string,
+	source *source,
 	subsonicUser string,
 	playlists []overallPlaylist,
 	rating map[int32]bool,
@@ -269,7 +274,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	var listenBrainzPlaylist *lbPlaylist
 
 	for _, plsMetadata := range playlists {
-		if plsMetadata.Playlist.Extension.Extension.AdditionalMetadata.AlgorithmMetadata.SourcePatch == source {
+		if plsMetadata.Playlist.Extension.Extension.AdditionalMetadata.AlgorithmMetadata.SourcePatch == source.SourcePatch {
 			id = getIdentifier(plsMetadata.Playlist.Identifier)
 
 			listenBrainzPlaylist, err = b.getPlaylist(id)
@@ -330,7 +335,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		return
 	}
 
-	existingPlaylist := b.findExistingPlaylist(resp, playlistName)
+	existingPlaylist := b.findExistingPlaylist(resp, source.PlaylistName)
 	if len(songIds) != 0 || existingPlaylist != nil {
 		createPlaylistParams := url.Values{
 			"songId": songIds,
@@ -339,12 +344,20 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		if existingPlaylist != nil {
 			createPlaylistParams.Add("playlistId", existingPlaylist.Id)
 		} else {
-			createPlaylistParams.Add("name", playlistName)
+			createPlaylistParams.Add("name", source.PlaylistName)
 		}
 
-		_, ok = b.makeSubsonicRequest("createPlaylist", subsonicUser, &createPlaylistParams)
+		resp, ok = b.makeSubsonicRequest("createPlaylist", subsonicUser, &createPlaylistParams)
 		if !ok {
+			pdk.Log(pdk.LogError, fmt.Sprintf("failed to create playlist %s", source.PlaylistName))
 			return
+		}
+
+		if existingPlaylist == nil && resp.Subsonic.Playlist != nil {
+			existingPlaylist = &responses.Playlist{
+				Id:        resp.Subsonic.Playlist.Id,
+				SongCount: int32(len(songIds)),
+			}
 		}
 	}
 
@@ -358,7 +371,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		comment += fmt.Sprintf("&nbsp;\nTracks excluded by rating rule: %s", strings.Join(excluded, ", "))
 	}
 
-	if existingPlaylist != nil && existingPlaylist.Comment != comment {
+	if existingPlaylist.Comment != comment {
 		policy := bluemonday.StrictPolicy()
 		sanitized := html.UnescapeString(policy.Sanitize(comment))
 
@@ -371,7 +384,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 			for i := range existingPlaylist.SongCount {
 				updatePlaylistParams.Add("songIndexToRemove", strconv.Itoa(int(i)))
 			}
-			pdk.Log(pdk.LogInfo, fmt.Sprintf("No matching files found for playlist %s", existingPlaylist.Name))
+			pdk.Log(pdk.LogInfo, fmt.Sprintf("No matching files found for playlist %s", source.PlaylistName))
 		}
 
 		_, ok = b.makeSubsonicRequest("updatePlaylist", subsonicUser, &updatePlaylistParams)
@@ -380,19 +393,24 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		}
 	}
 
-	pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully processed playlist %s for user %s", playlistName, subsonicUser))
+	pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully processed playlist %s for user %s", source.PlaylistName, subsonicUser))
 }
 
-func (b *BrainzPlaylistPlugin) updatePlaylists(users map[string]userConfig, fallbackCount int) {
+func (b *BrainzPlaylistPlugin) updatePlaylists(users []userConfig, fallbackCount int) {
 	b.artistMbidToId = map[string]string{}
 
-	for user, userData := range users {
+	for _, userData := range users {
 		ratings := map[int32]bool{}
 
-		if userData.Rating != nil {
-			for _, rating := range *userData.Rating {
-				if rating >= 0 && rating <= 5 {
-					ratings[rating] = true
+		if userData.Ratings != nil {
+			for _, rating := range userData.Ratings {
+				ratingInt, err := strconv.ParseInt(rating, 10, 32)
+				if err != nil {
+					continue
+				}
+
+				if ratingInt >= 0 && ratingInt <= 5 {
+					ratings[int32(ratingInt)] = true
 				}
 			}
 		}
@@ -401,25 +419,25 @@ func (b *BrainzPlaylistPlugin) updatePlaylists(users map[string]userConfig, fall
 			ratings = map[int32]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true}
 		}
 
-		playlists, err := b.getPlaylists(userData.Username)
+		playlists, err := b.getPlaylists(userData.LbzUsername)
 		if err != nil {
-			pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlists for user %s: %v", userData.Username, err))
+			pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlists for user %s: %v", userData.NDUsername, err))
 			continue
 		}
 
-		for lbzSource, plsName := range userData.Sources {
-			b.importPlaylist(lbzSource, plsName, user, playlists, ratings, fallbackCount)
+		for _, source := range userData.Sources {
+			b.importPlaylist(&source, userData.NDUsername, playlists, ratings, fallbackCount)
 		}
 	}
 }
 
-func getConfig() (map[string]userConfig, int, error) {
+func getConfig() ([]userConfig, int, error) {
 	users, ok := pdk.GetConfig("users")
 	if !ok {
 		return nil, 0, errors.New("missing required 'users' configuration")
 	}
 
-	userMapping := map[string]userConfig{}
+	userMapping := []userConfig{}
 	err := json.Unmarshal([]byte(users), &userMapping)
 	if err != nil {
 		return nil, 0, fmt.Errorf("Invalid user mapping: %s. Should be a mapping of Navidrome users to ListenBrainz usernames", users)
@@ -455,7 +473,7 @@ func (b *BrainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest
 }
 
 func (b *BrainzPlaylistPlugin) initialFetch(
-	users map[string]userConfig,
+	users []userConfig,
 	fallbackCount int,
 ) error {
 	nowTs := time.Now()
@@ -464,14 +482,14 @@ func (b *BrainzPlaylistPlugin) initialFetch(
 	olderThanThreeHours := false
 
 userLoop:
-	for user, userConf := range users {
-		playlistResp, ok := b.makeSubsonicRequest("getPlaylists", user, &url.Values{})
+	for _, user := range users {
+		playlistResp, ok := b.makeSubsonicRequest("getPlaylists", user.NDUsername, &url.Values{})
 		if !ok {
 			return errors.New("Failed to fetch playlists on initial fetch")
 		}
 
-		for _, source := range userConf.Sources {
-			pls := b.findExistingPlaylist(playlistResp, source)
+		for _, source := range user.Sources {
+			pls := b.findExistingPlaylist(playlistResp, source.PlaylistName)
 
 			if pls == nil {
 				missing = true
@@ -495,11 +513,6 @@ userLoop:
 	return nil
 }
 
-const DEFAULT_SOURCES = `{
-	"daily-jams": "ListenBrainz Daily Jams",
-	"weekly-jams": "ListenBrainz Weekly Jams"
-}`
-
 func (b *BrainzPlaylistPlugin) OnInit() error {
 	schedule, ok := pdk.GetConfig("schedule")
 	if !ok {
@@ -512,14 +525,13 @@ func (b *BrainzPlaylistPlugin) OnInit() error {
 	}
 
 	_, err = host.SchedulerScheduleRecurring(schedule, "playlist-fetch", peridiocSyncId)
-
 	if err != nil {
 		return fmt.Errorf("Failed to schedule playlist sync. Is your schedule a valid cron expression? %v", err)
 	}
 
-	checkonstartup, ok := pdk.GetConfig("checkonstartup")
+	checkOnStartup, ok := pdk.GetConfig("checkOnStartup")
 
-	if !ok || checkonstartup != "false" {
+	if !ok || checkOnStartup != "false" {
 		err := b.initialFetch(userMapping, fallbackCount)
 		if err != nil {
 			pdk.Log(pdk.LogWarn, fmt.Sprintf("Failed to do initial sync. Proceeding anyway %w", err))
