@@ -25,7 +25,7 @@ jobs:
         run: go mod download
 
       - name: Build plugin
-        run: tinygo build -o plugin.wasm -target wasip1 -buildmode=c-shared .
+        run: tinygo build -opt=2 -scheduler=none -no-debug -o plugin.wasm -target wasip1 -buildmode=c-shared .
 
       - name: Create packate
         run: zip listenbrainz-daily-playlist.ndp plugin.wasm manifest.json README.md LICENSE.md
