@@ -71,7 +71,8 @@
                       "description": "The name of the playlist as it will be created/updated for the user",
                       "minLength": 1
                     }
-                  }
+                  },
+                  "required": ["playlistName", "sourcePatch"]
                 }
               },
               "ratings": {
