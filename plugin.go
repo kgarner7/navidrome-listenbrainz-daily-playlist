@@ -28,7 +28,9 @@ const (
 )
 
 var (
-	allowedSchedules = map[string]bool{"@every 24h": true, "@every 48h": true, "@weekly": true, "@monthly": true}
+	allowedSchedules = map[string]bool{
+		"@every 12h": true, "@every 24h": true, "@every 48h": true, "@weekly": true, "@monthly": true,
+	}
 )
 
 type source struct {
@@ -335,7 +337,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		}
 	}
 
-	resp, ok := b.makeSubsonicRequest("getPlaylists", subsonicUser, &url.Values{})
+	resp, ok := b.makeSubsonicRequest("getPlaylists", subsonicUser, &url.Values{"username": []string{subsonicUser}})
 	if !ok {
 		return
 	}
