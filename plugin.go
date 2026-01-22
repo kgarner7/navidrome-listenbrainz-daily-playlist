@@ -345,7 +345,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	missing := []string{}
 	excluded := []string{}
 
-	pdk.Log(pdk.LogTrace, fmt.Sprintf("Importing playlist `%s`", listenBrainzPlaylist.Title))
+	pdk.Log(pdk.LogDebug, fmt.Sprintf("Importing playlist `%s`", listenBrainzPlaylist.Title))
 
 	for _, track := range listenBrainzPlaylist.Tracks {
 		mbid := getIdentifier(track.Identifier[0])
@@ -382,28 +382,24 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	}
 
 	existingPlaylist := b.findExistingPlaylist(resp, source.PlaylistName)
-	if len(songIds) != 0 || existingPlaylist != nil {
-		createPlaylistParams := url.Values{
-			"songId": songIds,
-		}
+	createPlaylistParams := url.Values{"songId": songIds}
 
-		if existingPlaylist != nil {
-			createPlaylistParams.Add("playlistId", existingPlaylist.Id)
-		} else {
-			createPlaylistParams.Add("name", source.PlaylistName)
-		}
+	if existingPlaylist != nil {
+		createPlaylistParams.Add("playlistId", existingPlaylist.Id)
+	} else {
+		createPlaylistParams.Add("name", source.PlaylistName)
+	}
 
-		resp, ok = b.makeSubsonicRequest("createPlaylist", subsonicUser, &createPlaylistParams)
-		if !ok {
-			pdk.Log(pdk.LogError, fmt.Sprintf("failed to create playlist %s", source.PlaylistName))
-			return
-		}
+	resp, ok = b.makeSubsonicRequest("createPlaylist", subsonicUser, &createPlaylistParams)
+	if !ok {
+		pdk.Log(pdk.LogError, fmt.Sprintf("failed to create playlist %s", source.PlaylistName))
+		return
+	}
 
-		if existingPlaylist == nil && resp.Subsonic.Playlist != nil {
-			existingPlaylist = &responses.Playlist{
-				Id:        resp.Subsonic.Playlist.Id,
-				SongCount: int32(len(songIds)),
-			}
+	if existingPlaylist == nil && resp.Subsonic.Playlist != nil {
+		existingPlaylist = &responses.Playlist{
+			Id:        resp.Subsonic.Playlist.Id,
+			SongCount: int32(len(songIds)),
 		}
 	}
 
@@ -417,7 +413,11 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		comment += fmt.Sprintf("&nbsp;\nTracks excluded by rating rule: %s", strings.Join(excluded, ", "))
 	}
 
-	if existingPlaylist.Comment != comment {
+	// There are two cases where the existing playlist should be updated: the comment needs updating
+	// and (for whatever reason), the current playlist has no matching tracks, but the existing one does
+	if existingPlaylist != nil && (existingPlaylist.Comment != comment ||
+		(len(songIds) == 0 && existingPlaylist.SongCount != 0)) {
+
 		policy := bluemonday.StrictPolicy()
 		sanitized := html.UnescapeString(policy.Sanitize(comment))
 
@@ -426,6 +426,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 			"comment":    []string{sanitized},
 		}
 
+		// If the current song count is empty, empty the playlist. This can't be done with createPlaylist
 		if len(songIds) == 0 {
 			for i := range existingPlaylist.SongCount {
 				updatePlaylistParams.Add("songIndexToRemove", strconv.Itoa(int(i)))
