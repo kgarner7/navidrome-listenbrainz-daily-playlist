@@ -3,12 +3,12 @@
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
   "permissions": {
     "http": {
-      "reason": "To fetch metadata from listenBrainz (and labs)",
+      "reason": "To fetch metadata from listenBrainz",
       "requiredHosts": ["api.listenbrainz.org"]
     },
     "scheduler": {
@@ -30,7 +30,6 @@
           "title": "User configurations",
           "minItems": 1,
           "description": "ListenBrainz configurations for each user",
-          "default": [{ "ratings": ["0", "1", "2", "3", "4", "5"]}],
           "items": {
             "type": "object",
             "properties": {
@@ -96,13 +95,14 @@
                 }
               }
             },
-            "required": ["lbzUsername", "sources", "username"]
+            "required": ["lbzUsername", "ratings", "sources", "username"]
           }
         },
         "schedule": {
           "type": "string",
           "title": "Schedule to fetch playlists",
           "oneOf": [
+            { "const": "@every 12h", "title": "Twice a day" },
             { "const": "@every 24h", "title": "Daily" },
             { "const": "@every 48h", "title": "Every 2 days" },
             { "const": "@weekly", "title": "Weekly" },
@@ -124,7 +124,7 @@
           "maximum": 500
         }
       },
-      "required": ["users"]
+      "required": ["fallbackCount", "schedule", "users"]
     },
     "uiSchema": {
       "type": "VerticalLayout",
