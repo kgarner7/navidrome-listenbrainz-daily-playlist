@@ -403,7 +403,10 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		}
 	}
 
-	comment := fmt.Sprintf("%s&nbsp;\n%s", listenBrainzPlaylist.Annotation, listenBrainzPlaylist.Identifier)
+	comment := fmt.Sprintf(
+		"%s&nbsp;\n%s&nbsp;\nUpdated on: %s",
+		listenBrainzPlaylist.Annotation, listenBrainzPlaylist.Identifier, listenBrainzPlaylist.Date,
+	)
 
 	if len(missing) > 0 {
 		comment += fmt.Sprintf("&nbsp;\nTracks not matched by track MBID or track name + artist MBIDs: %s", strings.Join(missing, ", "))
@@ -418,20 +421,18 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	if existingPlaylist != nil && (existingPlaylist.Comment != comment ||
 		(len(songIds) == 0 && existingPlaylist.SongCount != 0)) {
 
+		// If the current song count is empty, empty the playlist. This can't be done with createPlaylist
+		if len(songIds) == 0 {
+			comment += "&nbsp;\nNo matches were found for ListenBrainz playlist. Playlist content refers to prior playlist"
+			pdk.Log(pdk.LogWarn, fmt.Sprintf("No matching files found for playlist %s", source.PlaylistName))
+		}
+
 		policy := bluemonday.StrictPolicy()
 		sanitized := html.UnescapeString(policy.Sanitize(comment))
 
 		updatePlaylistParams := url.Values{
 			"playlistId": []string{existingPlaylist.Id},
 			"comment":    []string{sanitized},
-		}
-
-		// If the current song count is empty, empty the playlist. This can't be done with createPlaylist
-		if len(songIds) == 0 {
-			for i := range existingPlaylist.SongCount {
-				updatePlaylistParams.Add("songIndexToRemove", strconv.Itoa(int(i)))
-			}
-			pdk.Log(pdk.LogWarn, fmt.Sprintf("No matching files found for playlist %s", source.PlaylistName))
 		}
 
 		_, ok = b.makeSubsonicRequest("updatePlaylist", subsonicUser, &updatePlaylistParams)
