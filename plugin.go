@@ -6,14 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/extism/go-pdk"
-	"github.com/microcosm-cc/bluemonday"
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/lifecycle"
 	"github.com/navidrome/navidrome/plugins/pdk/go/scheduler"
@@ -582,17 +580,14 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		}
 	}
 
-	comment := fmt.Sprintf(
-		"%s&nbsp;\n%s&nbsp;\nUpdated on: %s",
-		listenBrainzPlaylist.Annotation, listenBrainzPlaylist.Identifier, listenBrainzPlaylist.Date,
-	)
+	comment := fmt.Sprintf("Generated from source %s\n%s\nUpdated on: %s", source.SourcePatch, listenBrainzPlaylist.Identifier, listenBrainzPlaylist.Date)
 
 	if len(missing) > 0 {
-		comment += fmt.Sprintf("&nbsp;\nTracks not matched by track MBID or track name + artist MBIDs: %s", strings.Join(missing, ", "))
+		comment += fmt.Sprintf("\nTracks not matched by track MBID or track name + artist MBIDs: %s", strings.Join(missing, ", "))
 	}
 
 	if len(excluded) > 0 {
-		comment += fmt.Sprintf("&nbsp;\nTracks excluded by rating rule: %s", strings.Join(excluded, ", "))
+		comment += fmt.Sprintf("\nTracks excluded by rating rule: %s", strings.Join(excluded, ", "))
 	}
 
 	// There are two cases where the existing playlist should be updated: the comment needs updating
@@ -602,16 +597,13 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 
 		// If the current song count is empty, empty the playlist. This can't be done with createPlaylist
 		if len(songIds) == 0 {
-			comment += "&nbsp;\nNo matches were found for ListenBrainz playlist. Playlist content refers to prior playlist"
+			comment += "\nNo matches were found for ListenBrainz playlist. Playlist content refers to prior playlist"
 			pdk.Log(pdk.LogWarn, fmt.Sprintf("No matching files found for playlist %s", source.PlaylistName))
 		}
 
-		policy := bluemonday.StrictPolicy()
-		sanitized := html.UnescapeString(policy.Sanitize(comment))
-
 		updatePlaylistParams := url.Values{
 			"playlistId": []string{existingPlaylist.Id},
-			"comment":    []string{sanitized},
+			"comment":    []string{comment},
 		}
 
 		_, ok = b.makeSubsonicRequest("updatePlaylist", subsonicUser, &updatePlaylistParams)
