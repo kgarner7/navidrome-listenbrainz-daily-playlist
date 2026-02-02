@@ -471,6 +471,8 @@ func (b *BrainzPlaylistPlugin) createJams(
 
 			workingSet = nextSet
 			nextSet = []*responses.Child{}
+
+			preferredMinPerArtist += 1
 		}
 	}
 
