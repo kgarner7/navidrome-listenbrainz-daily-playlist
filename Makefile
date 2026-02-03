@@ -1,7 +1,7 @@
 PACKAGE := "listenbrainz-daily-playlist"
 
 prod:
-	tinygo build -opt=2 -scheduler=none -no-debug -o plugin.wasm -target wasip1 -buildmode=c-shared .
+	tinygo build -opt=2 -scheduler=none -no-debug -gc=leaking -o plugin.wasm -target wasip1 -buildmode=c-shared .
 	zip $(PACKAGE).ndp plugin.wasm manifest.json
 
 dev:

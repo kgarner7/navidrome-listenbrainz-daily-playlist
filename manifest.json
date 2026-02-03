@@ -3,12 +3,12 @@
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
   "permissions": {
     "http": {
-      "reason": "To fetch metadata from listenBrainz (and labs)",
+      "reason": "To fetch metadata from listenBrainz",
       "requiredHosts": ["api.listenbrainz.org"]
     },
     "scheduler": {
@@ -30,7 +30,6 @@
           "title": "User configurations",
           "minItems": 1,
           "description": "ListenBrainz configurations for each user",
-          "default": [{ "ratings": ["0", "1", "2", "3", "4", "5"]}],
           "items": {
             "type": "object",
             "properties": {
@@ -46,10 +45,21 @@
                 "description": "The ListenBrainz username to associate with this user",
                 "minLength": 1
               },
+              "generatePlaylist": {
+                "type": "boolean",
+                "title": "Generate playlist",
+                "description": "Generate playlist locally from ListenBrainz recommendations rather than fetching from ListenBrainz. Caution: this is experimental, and only matches tracks by MBID",
+                "minLength": 1
+              },
+              "generatedPlaylist": {
+                "default": "Generated Daily Jams",
+                "type": "string",
+                "title": "Generated playlist name",
+                "minLength": 1
+              },
               "sources": {
                 "type": "array",
                 "title": "Playlists to import",
-                "minItems": 1,
                 "default": [
                   {
                     "sourcePatch": "daily-jams", "playlistName": "ListenBrainz Daily Jams"
@@ -96,13 +106,28 @@
                 }
               }
             },
-            "required": ["lbzUsername", "sources", "username"]
+            "anyOf": [
+              {
+                "properties": {
+                  "generatePlaylist": { "const": false },
+                  "sources": { "minItems": 1 }
+                },
+                "required": ["lbzUsername", "ratings", "sources", "username"]
+              },
+              {
+                "properties": {
+                  "generatePlaylist": { "const": true }
+                },
+                "required": ["generatedPlaylist", "lbzUsername", "ratings", "username"]
+              }
+            ]
           }
         },
         "schedule": {
           "type": "string",
           "title": "Schedule to fetch playlists",
           "oneOf": [
+            { "const": "@every 12h", "title": "Twice a day" },
             { "const": "@every 24h", "title": "Daily" },
             { "const": "@every 48h", "title": "Every 2 days" },
             { "const": "@weekly", "title": "Weekly" },
@@ -124,7 +149,7 @@
           "maximum": 500
         }
       },
-      "required": ["users"]
+      "required": ["fallbackCount", "schedule", "users"]
     },
     "uiSchema": {
       "type": "VerticalLayout",
@@ -144,6 +169,23 @@
                 {
                   "type": "Control",
                   "scope": "#/properties/lbzUsername"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/generatePlaylist"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/generatedPlaylist",
+                  "rule": {
+                    "effect": "HIDE",
+                    "condition": {
+                      "scope": "#/properties/generatePlaylist",
+                      "schema": {
+                        "const": false
+                      }
+                    }
+                  }
                 },
                 {
                   "type": "Control",
