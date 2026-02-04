@@ -45,7 +45,7 @@ Make sure that:
 1. You have plugins enabled (`Plugins.Enabled = true`, `ND_PLUGINS_ENABLED = true`).
 2. Your Navidrome user has read permissions in the plugin directory
 
-As an admin user open the plugin page (profile icon > plugins) and enable the `listenbrainz-metadata-provider` plugin.
+As an admin user open the plugin page (profile icon > plugins) and enable the `listenbrainz-daily-playlist` plugin.
 Note that you will need to configure it before use.
 
 ### Configuration
