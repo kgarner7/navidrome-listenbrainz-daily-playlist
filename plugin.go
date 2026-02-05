@@ -432,7 +432,7 @@ func (b *BrainzPlaylistPlugin) createJams(
 	}
 
 	if len(allowedSongs) < 50 {
-		unlistenedCount := min(len(allowedSongs)-50, len(notPlayed))
+		unlistenedCount := min(50-len(allowedSongs), len(notPlayed))
 		allowedSongs = append(allowedSongs, notPlayed[0:unlistenedCount]...)
 	}
 
@@ -728,6 +728,11 @@ userLoop:
 			if pls == nil {
 				missing = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, user.GeneratedPlaylist))
 				break
+			}
+
+			if nowTs.Sub(pls.Changed) > 3*time.Hour {
+				olderThanThreeHours = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, user.GeneratedPlaylist))
+				break userLoop
 			}
 		}
 	}
