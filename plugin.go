@@ -514,7 +514,7 @@ func (b *BrainzPlaylistPlugin) lookupTrack(
 		"artistCount": []string{"0"},
 		"albumCount":  []string{"0"},
 		"songCount":   []string{"1"},
-		"mbid":        []string{mbid},
+		"query":       []string{mbid},
 	}
 
 	resp, ok := b.makeSubsonicRequest("search3", subsonicUser, &trackParams)
@@ -585,22 +585,22 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	playlists []overallPlaylist,
 	rating map[int32]bool,
 ) {
-	var id string
+	var playlistId string
 	var err error
 	var listenBrainzPlaylist *lbPlaylist
 
 	for _, plsMetadata := range playlists {
 		if plsMetadata.Playlist.Extension.Extension.AdditionalMetadata.AlgorithmMetadata.SourcePatch == source.SourcePatch {
-			id = getIdentifier(plsMetadata.Playlist.Identifier)
+			playlistId = getIdentifier(plsMetadata.Playlist.Identifier)
 
-			listenBrainzPlaylist, err = b.getPlaylist(id)
+			listenBrainzPlaylist, err = b.getPlaylist(playlistId)
 			break
 		}
 	}
 
 	if err != nil {
 		err = errors.Join(err)
-		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlist %s for user %s: %v", id, subsonicUser, err))
+		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlist %s for user %s: %v", playlistId, subsonicUser, err))
 		return
 	} else if listenBrainzPlaylist == nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to get daily jams playlist for user %s", subsonicUser))
@@ -623,7 +623,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 
 		if song != nil {
 			if rating[song.UserRating] {
-				songIds = append(songIds, id)
+				songIds = append(songIds, song.Id)
 			} else {
 				excluded = append(excluded, fmt.Sprintf("%s by %s", track.Title, track.Creator))
 			}
