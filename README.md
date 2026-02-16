@@ -12,9 +12,7 @@ This repository contains a plugin for fetching daily playlists from [ListenBrain
 
 ### From GitHub Release
 
-You can download the `listenbrainz-daily-playlist.ndp` from the latest release and then run `navidrome plugin install listenbrainz-daily-playlist.ndp`.
-Make sure to run this command as your navidrome user.
-This will unzip the package, and install it automatically in your plugin directory.
+You can download the `listenbrainz-daily-playlist.ndp` from the latest release.
 
 ### From source
 
@@ -37,6 +35,8 @@ This is a development build of the plugin. Compilation should be _extremely_ fas
 make prod
 ```
 
+This is the release build. Package will be smaller (and faster), but compilation will be slower.
+
 ### Install
 
 Put the the `listenbrainz-daily-playlist.ndp` file in your Navidrome `Plugins.Folder`.
@@ -53,14 +53,34 @@ Note that you will need to configure it before use.
 To make the plugin useful, you will need to configure it.
 This requires configuring one or more users, and specifying which playlists to use.
 
-- `Navidrome username`: this is the username of the Navidrome account you want to enable. This user must also be selected in the `User Permission` block
-- `ListenBrainz username`: the user's ListenBrainz username
-- `Source`: This is a ListenBrainz internal field which specifies how the playlist is generated. Examples include `weekly-jams`, `daily-jams` and `weekly-exploration`.
-- `Playlist name to be imported`: the name of the playlist that will be created within Navidrome. **CAUTION**: if a playlist with this name already exists, it will be overridden.
-- `Include tracks with this rating.`: if you only want to import tracks with certain ratings, uncheck one or more boxes
-- `Schedule to fetch playlists`: how often to fetch playlists
+1. Navigate to the plugin list page (user icon > plugins) as an admin user. 
+2. Click on plugin to enter the configuration page
+
+![Image showing a list of plugins. There is one item on the list, listenbrainz-daily-playlist, version 4.0.0, that is not enabled](./assets/playlist_list.png)
+
+3. Select which user(s) you want to be able to use this plugin, or allow all users.
+
+![Image showing user permissions on plugin page. Allow all users is deselected. User <redacted> is enabled, user test is disabled](./assets/user_permissions.png)
+
+4. Configure the plugin. You must have at least one user configuration (press the plus). If there are any errors in red in the configuration block, you must resolve them before saving.
+
+- `User configurations`: a list (one or more) of users to configure. Each user configured in this list should be selected in the users permission block
+    - `Navidrome username`: this is the username of the Navidrome account you want to enable. This user must also be selected in the `User Permission` block
+    - `ListenBrainz username`: the user's ListenBrainz username
+    - `ListenBrainz token`: optional, allows fetching information using the ListenBrainz token. This _may_ improve rate limit/be used in the future.
+    - `Generate playlist`: if true, create a playlist by applying an algorithm based off of [Troi](https://github.com/metabrainz/troi-recommendation-playground). **CAUTION**: This is experimental, and will be slow, as track matching is expensive (upwards of 1000 requests per user generation)
+        - `Generated playlist name`: the name of the generated playlist
+        - `Exclude tracks played in the last X days`: if nonzero, exclude tracks that were played by this user in the last X days.
+        - `Maximum number of tracks per artist`: if nonzero, allow at most X tracks from a given artist.
+    - `Playlists to import`: a list of one or more playlist types to be imported
+        - `Source`: This is a ListenBrainz internal field which specifies how the playlist is generated. Examples include `weekly-jams`, `daily-jams` and `weekly-exploration`.
+        - `Playlist name to be imported`: the name of the playlist that will be created within Navidrome. **CAUTION**: if a playlist with this name already exists, it will be overridden.
+    - `Include tracks with this rating.`: if you only want to import tracks with certain ratings, uncheck one or more boxes
+- `Hour to fetch playlists (24-hour format)`: the hour (24-hour moment) to fetch/generate all playlists. This is then delayed by a random interval up to an hour
 - `Fallback search count`: If a match isn't found by track name, how many tracks to search by until giving up. Between 1 and 500, inclusive
 - `Check for out of date playlists on plugin start`: If Navidrome or the plugin is restarted, check if any playlists are out of date (at least three hours old).
+
+![Image showing a full configuration. There is one user: ND username <redacted>; LBZ username <lbz-username> LBZ token uuidv4 of all zeros; generate playlist is true with name "Generated Daily Jams", excluding tracks played in the last 60 days, and allowing at most 2 tracks per artist. Two playlists are set to be imported, one is expanded with source "daily-jams" and name "ListenBrainz Daily Jams", and the other "weekly-jams" is not expanded. All ratings except 1 are selected, and the playlists are scheduled to be fetched around 7:00 AM, with a fallback search of 15 tracks. Plugin will check for out of date playlists on start](./assets/full_config.png)
 
 To get another valid `source`, visit your `https://listenbrainz.org/user/<your username>/recommendations/`.
 Click on the inspect playlist `</>` icon and use the string in `source_patch`.
