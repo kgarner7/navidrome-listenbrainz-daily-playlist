@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
+  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/plugins-endpoints/plugins/manifest-schema.json",
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
@@ -7,6 +7,11 @@
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
   "permissions": {
+    "endpoints": {
+      "auth": "subsonic",
+      "paths": ["/import"],
+      "reason": "Exposes HTTP endpoint to allow importing arbitrary ListenBrainz playlists"
+    },
     "http": {
       "reason": "To fetch metadata from listenBrainz",
       "requiredHosts": ["api.listenbrainz.org"]
