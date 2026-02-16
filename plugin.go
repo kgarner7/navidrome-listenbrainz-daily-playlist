@@ -175,11 +175,11 @@ func (b *BrainzPlaylistPlugin) makeLbzGet(endpoint, token string) pdk.HTTPRespon
 	req := pdk.NewHTTPRequest(pdk.MethodGet, endpoint)
 	req.SetHeader("Accept", "application/json")
 	req.SetHeader("User-Agent", userAgent)
-	resp := req.Send()
-
 	if token != "" {
 		req.SetHeader("Authorization", "Token "+token)
 	}
+
+	resp := req.Send()
 
 	processRatelimit(&resp)
 
