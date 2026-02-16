@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/plugins-jsonforms/plugins/manifest-schema.json",
+  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
@@ -45,10 +45,15 @@
                 "description": "The ListenBrainz username to associate with this user",
                 "minLength": 1
               },
+              "lbzToken": {
+                "type": "string",
+                "title": "ListenBrainz token",
+                "description": "The ListenBrainz token to use for this user (optional)",
+                "minLength": 1
+              },
               "generatePlaylist": {
                 "type": "boolean",
                 "title": "Generate playlist",
-                "description": "Generate playlist locally from ListenBrainz recommendations rather than fetching from ListenBrainz. Caution: this is experimental, and only matches tracks by MBID",
                 "minLength": 1
               },
               "generatedPlaylist": {
@@ -56,6 +61,20 @@
                 "type": "string",
                 "title": "Generated playlist name",
                 "minLength": 1
+              },
+              "generatedPlaylistTrackAge": {
+                "default": 60,
+                "type": "integer",
+                "title": "Exclude tracks played in the last X days",
+                "description": "Set 0 to include all recommendations",
+                "minimum": 0
+              },
+              "generatedPlaylistArtistLimit": {
+                "default": 2,
+                "type": "integer",
+                "title": "Maximum number of tracks per artist",
+                "description": "Set 0 to have no limit per artist",
+                "minimum": 0
               },
               "sources": {
                 "type": "array",
@@ -118,22 +137,18 @@
                 "properties": {
                   "generatePlaylist": { "const": true }
                 },
-                "required": ["generatedPlaylist", "lbzUsername", "ratings", "username"]
+                "required": ["generatedPlaylist", "generatedPlaylistArtistLimit", "generatedPlaylistTrackAge", "lbzUsername", "ratings", "username"]
               }
             ]
           }
         },
         "schedule": {
-          "type": "string",
-          "title": "Schedule to fetch playlists",
-          "oneOf": [
-            { "const": "@every 12h", "title": "Twice a day" },
-            { "const": "@every 24h", "title": "Daily" },
-            { "const": "@every 48h", "title": "Every 2 days" },
-            { "const": "@weekly", "title": "Weekly" },
-            { "const": "@monthly", "title": "Monthly" }
-          ],
-          "default": "@every 24h"
+          "type": "integer",
+          "title": "Hour to fetch playlists (24-hour format)",
+          "description": "NOTE: To be kind to LBZ servers, this fetch happens at a random interval between this time and one hour later.",
+          "minimum": 0,
+          "maximum": 24,
+          "default": 8
         },
         "checkOnStartup": {
           "type": "boolean",
@@ -172,17 +187,51 @@
                 },
                 {
                   "type": "Control",
+                  "scope": "#/properties/lbzToken"
+                },
+                {
+                  "type": "Label",
+                  "text": "Generate playlist locally from ListenBrainz recommendations rather than fetching from ListenBrainz. Caution: this is experimental, and takes time (upwards of 5 seconds) per playlist"
+                },
+                {
+                  "type": "Control",
                   "scope": "#/properties/generatePlaylist"
                 },
                 {
                   "type": "Control",
                   "scope": "#/properties/generatedPlaylist",
                   "rule": {
-                    "effect": "HIDE",
+                    "effect": "SHOW",
                     "condition": {
                       "scope": "#/properties/generatePlaylist",
                       "schema": {
-                        "const": false
+                        "const": true
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/generatedPlaylistTrackAge",
+                  "rule": {
+                    "effect": "SHOW",
+                    "condition": {
+                      "scope": "#/properties/generatePlaylist",
+                      "schema": {
+                        "const": true
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/generatedPlaylistArtistLimit",
+                  "rule": {
+                    "effect": "SHOW",
+                    "condition": {
+                      "scope": "#/properties/generatePlaylist",
+                      "schema": {
+                        "const": true
                       }
                     }
                   }

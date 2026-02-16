@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"strconv"
 	"strings"
@@ -20,15 +21,10 @@ import (
 
 const (
 	lbzEndpoint    = "https://api.listenbrainz.org/1"
-	peridiocSyncId = "listenbrainz"
 	userAgent      = "NavidromePlaylistImporter/3.0"
 	initialFetchId = "initial-fetch"
-)
-
-var (
-	allowedSchedules = map[string]bool{
-		"@every 12h": true, "@every 24h": true, "@every 48h": true, "@weekly": true, "@monthly": true,
-	}
+	delayedSync    = "delayed-sync"
+	dailyCron      = "daily-cron"
 )
 
 type source struct {
@@ -37,12 +33,15 @@ type source struct {
 }
 
 type userConfig struct {
-	GeneratePlaylist  bool     `json:"generatePlaylist"`
-	GeneratedPlaylist string   `json:"generatedPlaylist"`
-	NDUsername        string   `json:"username"`
-	LbzUsername       string   `json:"lbzUsername"`
-	Ratings           []string `json:"ratings,omitempty"`
-	Sources           []source `json:"sources"`
+	GeneratePlaylist             bool     `json:"generatePlaylist"`
+	GeneratedPlaylist            string   `json:"generatedPlaylist"`
+	GeneratedPlaylistTrackAge    int      `json:"generatedPlaylistTrackAge"`
+	GeneratedPlaylistArtistLimit int      `json:"generatedPlaylistArtistLimit"`
+	NDUsername                   string   `json:"username"`
+	LbzUsername                  string   `json:"lbzUsername"`
+	LbzToken                     string   `json:"lbzToken"`
+	Ratings                      []string `json:"ratings,omitempty"`
+	Sources                      []source `json:"sources"`
 }
 
 type lbzError struct {
@@ -172,13 +171,23 @@ func processRatelimit(resp *pdk.HTTPResponse) {
 	}
 }
 
-func (b *BrainzPlaylistPlugin) getPlaylists(lbzUsername string) ([]overallPlaylist, error) {
-	req := pdk.NewHTTPRequest(pdk.MethodGet, fmt.Sprintf("%s/user/%s/playlists/createdfor", lbzEndpoint, lbzUsername))
+func (b *BrainzPlaylistPlugin) makeLbzGet(endpoint, token string) pdk.HTTPResponse {
+	req := pdk.NewHTTPRequest(pdk.MethodGet, endpoint)
 	req.SetHeader("Accept", "application/json")
 	req.SetHeader("User-Agent", userAgent)
 	resp := req.Send()
 
+	if token != "" {
+		req.SetHeader("Authorization", "Token "+token)
+	}
+
 	processRatelimit(&resp)
+
+	return resp
+}
+
+func (b *BrainzPlaylistPlugin) getPlaylists(lbzUsername, lbzToken string) ([]overallPlaylist, error) {
+	resp := b.makeLbzGet(fmt.Sprintf("%s/user/%s/playlists/createdfor", lbzEndpoint, lbzUsername), lbzToken)
 
 	var result lbzPlaylistResponse
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
@@ -192,13 +201,8 @@ func (b *BrainzPlaylistPlugin) getPlaylists(lbzUsername string) ([]overallPlayli
 	return result.Playlists, nil
 }
 
-func (b *BrainzPlaylistPlugin) getPlaylist(id string) (*lbPlaylist, error) {
-	req := pdk.NewHTTPRequest(pdk.MethodGet, fmt.Sprintf("%s/playlist/%s", lbzEndpoint, id))
-	req.SetHeader("Accept", "application/json")
-	req.SetHeader("User-Agent", userAgent)
-	resp := req.Send()
-
-	processRatelimit(&resp)
+func (b *BrainzPlaylistPlugin) getPlaylist(id, lbzToken string) (*lbPlaylist, error) {
+	resp := b.makeLbzGet(fmt.Sprintf("%s/playlist/%s", lbzEndpoint, id), lbzToken)
 
 	var result lbzPlaylistResponse
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
@@ -320,13 +324,8 @@ func (b *BrainzPlaylistPlugin) updateSubsonicPlaylist(subsonicUser, playlistName
 	return nil
 }
 
-func (b *BrainzPlaylistPlugin) getRecommendations(lbzUsername string) (*lbzRecommendations, error) {
-	req := pdk.NewHTTPRequest(pdk.MethodGet, fmt.Sprintf("%s/cf/recommendation/user/%s/recording?count=1000", lbzEndpoint, lbzUsername))
-	req.SetHeader("Accept", "application/json")
-	req.SetHeader("User-Agent", userAgent)
-	resp := req.Send()
-
-	processRatelimit(&resp)
+func (b *BrainzPlaylistPlugin) getRecommendations(lbzUsername, lbzToken string) (*lbzRecommendations, error) {
+	resp := b.makeLbzGet(fmt.Sprintf("%s/cf/recommendation/user/%s/recording?count=1000", lbzEndpoint, lbzUsername), lbzToken)
 
 	recommendations := lbzRecommendations{}
 	err := json.Unmarshal(resp.Body(), &recommendations)
@@ -350,11 +349,15 @@ type recLookup struct {
 	Inc            string   `json:"inc"`
 }
 
-func (b *BrainzPlaylistPlugin) lookupRecordings(mbids []string) (map[string]lbzMetadataLookup, error) {
+func (b *BrainzPlaylistPlugin) lookupRecordings(mbids []string, lbzToken string) (map[string]lbzMetadataLookup, error) {
 	req := pdk.NewHTTPRequest(pdk.MethodPost, fmt.Sprintf("%s/metadata/recording", lbzEndpoint))
 	req.SetHeader("Accept", "application/json")
 	req.SetHeader("Content-Type", "application/json")
 	req.SetHeader("User-Agent", userAgent)
+
+	if lbzToken != "" {
+		req.SetHeader("Authorization", "Token "+lbzToken)
+	}
 
 	payload := recLookup{RecordingMbids: mbids, Inc: "artist"}
 	payloadBytes, _ := json.Marshal(payload)
@@ -382,13 +385,12 @@ func (b *BrainzPlaylistPlugin) lookupRecordings(mbids []string) (map[string]lbzM
 }
 
 func (b *BrainzPlaylistPlugin) createJams(
-	subsonicUser, lbzUsername, playlistName string,
-	minLastPlayedDays, preferredMinPerArtist int,
+	userData *userConfig,
 	rating map[int32]bool,
 ) error {
 	now := time.Now()
 
-	recommendations, err := b.getRecommendations(lbzUsername)
+	recommendations, err := b.getRecommendations(userData.LbzUsername, userData.LbzToken)
 	if err != nil {
 		return err
 	}
@@ -398,7 +400,7 @@ func (b *BrainzPlaylistPlugin) createJams(
 		mbids[idx] = recording.RecordingMBID
 	}
 
-	metadata, err := b.lookupRecordings(mbids)
+	metadata, err := b.lookupRecordings(mbids, userData.LbzToken)
 	if err != nil {
 		return err
 	}
@@ -422,7 +424,7 @@ func (b *BrainzPlaylistPlugin) createJams(
 			artistMbids[idx] = artist.ArtistMbid
 		}
 
-		song := b.lookupTrack(subsonicUser, recordingMetadata.Recording.Name, mbid, artistMbids)
+		song := b.lookupTrack(userData.NDUsername, recordingMetadata.Recording.Name, mbid, artistMbids)
 		if song == nil {
 			missing = append(missing, recordingMetadata.Recording.Name)
 			continue
@@ -438,7 +440,7 @@ func (b *BrainzPlaylistPlugin) createJams(
 			continue
 		}
 
-		if now.Sub(*song.Played).Hours() < float64(minLastPlayedDays*24) {
+		if now.Sub(*song.Played).Hours() < float64(userData.GeneratedPlaylistTrackAge*24) {
 			recentCount += 1
 			pdk.Log(pdk.LogTrace, fmt.Sprintf("Excluding track `%s` for being played recently", song.Title))
 			continue
@@ -454,41 +456,30 @@ func (b *BrainzPlaylistPlugin) createJams(
 
 	songIds := []string{}
 
-	if len(allowedSongs) < 50 {
-		for _, song := range allowedSongs {
+	if userData.GeneratedPlaylistArtistLimit == 0 {
+		for _, song := range allowedSongs[:min(len(allowedSongs), 50)] {
 			songIds = append(songIds, song.Id)
 		}
 	} else {
 		artistCredits := map[string]int{}
 
-		workingSet := allowedSongs
-		nextSet := []*responses.Child{}
-
-		for len(songIds) < 50 {
-		outer:
-			for _, song := range workingSet {
-				for _, artist := range song.Artists {
-					count := artistCredits[artist.Id]
-					if count >= preferredMinPerArtist {
-						nextSet = append(nextSet, song)
-						continue outer
-					}
-				}
-
-				songIds = append(songIds, song.Id)
-				if len(songIds) == 50 {
-					break outer
-				}
-
-				for _, artist := range song.Artists {
-					artistCredits[artist.Id] += 1
+	outer:
+		for _, song := range allowedSongs {
+			for _, artist := range song.Artists {
+				count := artistCredits[artist.Id]
+				if count >= userData.GeneratedPlaylistArtistLimit {
+					continue outer
 				}
 			}
 
-			workingSet = nextSet
-			nextSet = []*responses.Child{}
+			songIds = append(songIds, song.Id)
+			if len(songIds) == 50 {
+				break outer
+			}
 
-			preferredMinPerArtist += 1
+			for _, artist := range song.Artists {
+				artistCredits[artist.Id] += 1
+			}
 		}
 	}
 
@@ -503,7 +494,7 @@ func (b *BrainzPlaylistPlugin) createJams(
 		recentCount,
 	)
 
-	return b.updateSubsonicPlaylist(subsonicUser, playlistName, comment, songIds)
+	return b.updateSubsonicPlaylist(userData.NDUsername, userData.GeneratedPlaylist, comment, songIds)
 }
 
 func (b *BrainzPlaylistPlugin) lookupTrack(
@@ -581,7 +572,7 @@ func (b *BrainzPlaylistPlugin) lookupTrack(
 
 func (b *BrainzPlaylistPlugin) importPlaylist(
 	source *source,
-	subsonicUser string,
+	subsonicUser, lbzToken string,
 	playlists []overallPlaylist,
 	rating map[int32]bool,
 ) {
@@ -592,8 +583,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	for _, plsMetadata := range playlists {
 		if plsMetadata.Playlist.Extension.Extension.AdditionalMetadata.AlgorithmMetadata.SourcePatch == source.SourcePatch {
 			playlistId = getIdentifier(plsMetadata.Playlist.Identifier)
-
-			listenBrainzPlaylist, err = b.getPlaylist(playlistId)
+			listenBrainzPlaylist, err = b.getPlaylist(playlistId, lbzToken)
 			break
 		}
 	}
@@ -719,18 +709,18 @@ func (b *BrainzPlaylistPlugin) updatePlaylists(users []userConfig) {
 			ratings = map[int32]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true}
 		}
 
-		playlists, err := b.getPlaylists(userData.LbzUsername)
+		playlists, err := b.getPlaylists(userData.LbzUsername, userData.LbzToken)
 		if err != nil {
 			pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlists for user %s: %v", userData.NDUsername, err))
 			continue
 		}
 
 		for _, source := range userData.Sources {
-			b.importPlaylist(&source, userData.NDUsername, playlists, ratings)
+			b.importPlaylist(&source, userData.NDUsername, userData.LbzToken, playlists, ratings)
 		}
 
 		if userData.GeneratePlaylist && userData.GeneratedPlaylist != "" {
-			err := b.createJams(userData.NDUsername, userData.LbzUsername, userData.GeneratedPlaylist, 60, 2, ratings)
+			err := b.createJams(&userData, ratings)
 			if err != nil {
 				pdk.Log(pdk.LogError, fmt.Sprintf("Failed to generate playlist `%s` for user `%s` locally: %v", userData.GeneratedPlaylist, userData.NDUsername, err))
 			} else {
@@ -834,10 +824,15 @@ func (b *BrainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest
 
 	b.fallbackCount = fallbackCount
 
-	if req.Payload == initialFetchId {
-		b.initialFetch(userMapping)
-	} else {
+	switch req.Payload {
+	case dailyCron:
+		delay := rand.Int31n(3600)
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("Delaying fetch by %d seconds", delay))
+		host.SchedulerScheduleOneTime(delay, delayedSync, delayedSync)
+	case delayedSync:
 		b.updatePlaylists(userMapping)
+	case initialFetchId:
+		b.initialFetch(userMapping)
 	}
 
 	return nil
@@ -846,20 +841,24 @@ func (b *BrainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest
 func (b *BrainzPlaylistPlugin) OnInit() error {
 	schedule, ok := pdk.GetConfig("schedule")
 	if !ok {
-		schedule = "@every 24h"
+		schedule = "8"
 	}
 
-	_, ok = allowedSchedules[schedule]
-	if !ok {
-		return fmt.Errorf("%s is not an allowed sync schedule", schedule)
+	schedInt, err := strconv.Atoi(schedule)
+	if err != nil {
+		return fmt.Errorf("Invalid schedule %s: %v", schedule, err)
 	}
 
-	_, _, err := getConfig()
+	if schedInt < 0 || schedInt > 23 {
+		return fmt.Errorf("Schedule is not a valid hour (between [0, 23], inclusive): %d", schedInt)
+	}
+
+	_, _, err = getConfig()
 	if err != nil {
 		return err
 	}
 
-	_, err = host.SchedulerScheduleRecurring(schedule, "playlist-fetch", peridiocSyncId)
+	_, err = host.SchedulerScheduleRecurring(fmt.Sprintf("0 %d * * *", schedInt), dailyCron, dailyCron)
 	if err != nil {
 		return fmt.Errorf("Failed to schedule playlist sync. Is your schedule a valid cron expression? %v", err)
 	}
@@ -867,7 +866,7 @@ func (b *BrainzPlaylistPlugin) OnInit() error {
 	checkOnStartup, ok := pdk.GetConfig("checkOnStartup")
 
 	if !ok || checkOnStartup != "false" {
-		_, err := host.SchedulerScheduleOneTime(1, initialFetchId, "initialFetchId")
+		_, err := host.SchedulerScheduleOneTime(1, initialFetchId, initialFetchId)
 		if err != nil {
 			pdk.Log(pdk.LogWarn, fmt.Sprintf("Failed to do initial sync. Proceeding anyway %v", err))
 		}
