@@ -597,9 +597,11 @@ func (b *BrainzPlaylistPlugin) importPlaylistFromSource(
 		return
 	}
 
-	err = b.importPlaylist(listenBrainzPlaylist, source.SourcePatch, source.PlaylistName, subsonicUser, rating)
+	plsId, err := b.importPlaylist(listenBrainzPlaylist, source.SourcePatch, source.PlaylistName, subsonicUser, rating)
 	if err != nil {
 		pdk.Log(pdk.LogError, err.Error())
+	} else {
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully processed playlist %s for user %s. Imported id: %s", source.PlaylistName, subsonicUser, plsId))
 	}
 }
 
@@ -607,7 +609,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 	listenBrainzPlaylist *lbPlaylist,
 	source, playlistName, subsonicUser string,
 	rating map[int32]bool,
-) error {
+) (string, error) {
 	songIds := []string{}
 	missing := []string{}
 	excluded := []string{}
@@ -635,7 +637,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 
 	resp, ok := b.makeSubsonicRequest("getPlaylists", subsonicUser, &url.Values{"username": []string{subsonicUser}})
 	if !ok {
-		return errors.New("failed to fetch subsonic playlists for user " + subsonicUser)
+		return "", errors.New("failed to fetch subsonic playlists for user " + subsonicUser)
 	}
 
 	existingPlaylist := b.findExistingPlaylist(resp, playlistName)
@@ -649,7 +651,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 
 	resp, ok = b.makeSubsonicRequest("createPlaylist", subsonicUser, &createPlaylistParams)
 	if !ok {
-		return errors.New("failed to create playlist " + playlistName)
+		return "", errors.New("failed to create playlist " + playlistName)
 	}
 
 	if existingPlaylist == nil && resp.Subsonic.Playlist != nil {
@@ -687,12 +689,15 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 
 		_, ok = b.makeSubsonicRequest("updatePlaylist", subsonicUser, &updatePlaylistParams)
 		if !ok {
-			return fmt.Errorf("Failed to update playlist %s for %s", playlistName, subsonicUser)
+			return "", fmt.Errorf("Failed to update playlist %s for %s", playlistName, subsonicUser)
 		}
 	}
 
-	pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully processed playlist %s for user %s", playlistName, subsonicUser))
-	return nil
+	if existingPlaylist != nil {
+		return existingPlaylist.Id, nil
+	}
+
+	return "", nil
 }
 
 func getRatingsFromUser(userData *userConfig) map[int32]bool {
@@ -897,15 +902,28 @@ type httpError struct {
 	Ok    bool   `json:"ok"`
 }
 
+type createSuccess struct {
+	Id string `json:"id"`
+	Ok bool   `json:"ok"`
+}
+
 func createHttpError(message string, code int32) (httpendpoint.HTTPHandleResponse, error) {
 	err := httpError{Error: message, Ok: false}
 	body, _ := json.Marshal(err)
-	return httpendpoint.HTTPHandleResponse{Status: code, Body: body}, nil
+	return httpendpoint.HTTPHandleResponse{
+		Body: body, Headers: map[string][]string{"Content-Type": {"application/json"}}, Status: code,
+	}, nil
 }
 
 func (b *BrainzPlaylistPlugin) HandleRequest(req httpendpoint.HTTPHandleRequest) (httpendpoint.HTTPHandleResponse, error) {
+	enableHttp, exists := pdk.GetConfig("enableHttp")
+
+	if !exists || enableHttp != "true" {
+		return createHttpError("Not enabled", 501)
+	}
+
 	if req.User == nil {
-		return createHttpError("", 401)
+		return createHttpError("Authentication required", 401)
 	}
 
 	configs, _, err := getConfig()
@@ -925,12 +943,12 @@ func (b *BrainzPlaylistPlugin) HandleRequest(req httpendpoint.HTTPHandleRequest)
 		return createHttpError(fmt.Sprintf("User %s not configured", req.User.Username), 404)
 	}
 
+	if len(req.Query) > 500 {
+		return createHttpError("Bad request", 400)
+	}
+
 	switch req.Path {
 	case "/import":
-		if len(req.Query) > 500 {
-			return createHttpError("Bad request", 400)
-		}
-
 		values, err := url.ParseQuery(req.Query)
 		if err != nil {
 			return createHttpError(fmt.Sprintf("Bad request: %v", err), 400)
@@ -953,13 +971,19 @@ func (b *BrainzPlaylistPlugin) HandleRequest(req httpendpoint.HTTPHandleRequest)
 
 		ratings := getRatingsFromUser(user)
 		b.artistMbidToId = map[string]string{}
-		err = b.importPlaylist(playlist, playlist.Title, playlistName, user.NDUsername, ratings)
+		plsId, err := b.importPlaylist(playlist, playlist.Title, playlistName, user.NDUsername, ratings)
 
 		if err != nil {
 			return createHttpError(err.Error(), 500)
 		}
 
-		return httpendpoint.HTTPHandleResponse{Status: 200, Body: []byte(`{"ok": true}`)}, nil
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully imported playlist %s (%s) as %s", playlist.Title, playlistId, playlistName))
+
+		success := createSuccess{Id: plsId, Ok: true}
+		payload, _ := json.Marshal(success)
+		return httpendpoint.HTTPHandleResponse{
+			Body: payload, Headers: map[string][]string{"Content-Type": {"application/json"}}, Status: 200,
+		}, nil
 	default:
 		return createHttpError("Not found", 404)
 	}
@@ -972,3 +996,8 @@ func init() {
 }
 
 func main() {}
+
+var (
+	_ scheduler.CallbackProvider = (*BrainzPlaylistPlugin)(nil)
+	_ lifecycle.InitProvider     = (*BrainzPlaylistPlugin)(nil)
+)

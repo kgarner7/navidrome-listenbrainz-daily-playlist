@@ -167,6 +167,11 @@
           "default": 15,
           "minimum": 1,
           "maximum": 500
+        },
+        "enableHttp": {
+          "type": "boolean",
+          "title": "Enable API to import custom playlists from ListenBrainz",
+          "default": false
         }
       },
       "required": ["fallbackCount", "schedule", "users"]
@@ -275,19 +280,29 @@
         },
         {
           "type": "HorizontalLayout",
-            "elements": [
+          "elements": [
             {
               "type": "Control",
               "scope": "#/properties/schedule"
-            },        {
+            },
+            {
               "type": "Control",
               "scope": "#/properties/fallbackCount"
             }
           ]
         },
         {
-          "type": "Control",
-          "scope": "#/properties/checkOnStartup"
+          "type": "HorizontalLayout",
+          "elements": [
+            {
+              "type": "Control",
+              "scope": "#/properties/checkOnStartup"
+            },
+            {
+              "type": "Control",
+              "scope": "#/properties/enableHttp"
+            }
+          ]
         }
       ]
     }
