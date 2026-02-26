@@ -53,6 +53,8 @@ var _ = Describe("ListenBrainz endpoints", func() {
 
 		sleepDuration = nil
 		pdk.ResetMock()
+		pdk.PDKMock.Calls = nil
+		pdk.PDKMock.ExpectedCalls = nil
 		pdk.PDKMock.On("Log", mock.Anything, mock.Anything).Maybe()
 
 		DeferCleanup(func() {
@@ -77,6 +79,22 @@ var _ = Describe("ListenBrainz endpoints", func() {
 		} else {
 			Expect(sleepDuration).To(BeNil())
 		}
+
+		expectedCalls := []mock.Arguments{}
+		for _, call := range pdk.PDKMock.ExpectedCalls {
+			if call.Method != "Log" {
+				expectedCalls = append(expectedCalls, call.Arguments)
+			}
+		}
+
+		actualCalls := []mock.Arguments{}
+		for _, call := range pdk.PDKMock.Calls {
+			if call.Method != "Log" {
+				actualCalls = append(actualCalls, call.Arguments)
+			}
+		}
+
+		Expect(expectedCalls).To(Equal(actualCalls))
 	}
 
 	Describe("GetPlaylist", func() {

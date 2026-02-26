@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"listenbrainz-daily-playlist/listenbrainz"
+	"listenbrainz-daily-playlist/subsonic"
 	"math/rand"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -42,117 +42,12 @@ type userConfig struct {
 }
 
 type BrainzPlaylistPlugin struct {
-	artistMbidToId map[string]string
-	fallbackCount  int
+	subsonic *subsonic.SubsonicHandler
 }
 
 func getIdentifier(url string) string {
 	split := strings.Split(url, "/")
 	return split[len(split)-1]
-}
-
-func (b *BrainzPlaylistPlugin) makeSubsonicRequest(endpoint, subsonicUser string, params *url.Values) (*responses.JsonWrapper, bool) {
-	subsonicResp, err := host.SubsonicAPICall(fmt.Sprintf("/rest/%s?u=%s&%s", endpoint, subsonicUser, params.Encode()))
-
-	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("An error occurred %s: %v", subsonicUser, err))
-		return nil, false
-	}
-
-	var decoded responses.JsonWrapper
-	if err := json.Unmarshal([]byte(subsonicResp), &decoded); err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("A deserialization error occurred %s: %s", subsonicUser, err))
-		return nil, false
-	}
-
-	if decoded.Subsonic.Status != "ok" {
-		pdk.Log(pdk.LogError, fmt.Sprintf("Subsonic status is not ok: (%d)%s", decoded.Subsonic.Error.Code, decoded.Subsonic.Error.Message))
-		return nil, false
-	}
-
-	return &decoded, true
-}
-
-func findExistingPlaylist(resp *responses.JsonWrapper, playlistName string) *responses.Playlist {
-	if len(resp.Subsonic.Playlists.Playlist) > 0 {
-		for _, playlist := range resp.Subsonic.Playlists.Playlist {
-			if playlist.Name == playlistName {
-				return &playlist
-			}
-		}
-	}
-
-	return nil
-}
-
-func (b *BrainzPlaylistPlugin) findArtistIdByMbid(
-	subsonicUser string,
-	mbid string,
-) string {
-	existing, ok := b.artistMbidToId[mbid]
-	if ok {
-		return existing
-	}
-
-	artistParams := url.Values{
-		"artistCount": []string{"1"},
-		"albumCount":  []string{"0"},
-		"songCount":   []string{"0"},
-		"query":       []string{mbid},
-	}
-
-	resp, ok := b.makeSubsonicRequest("search3", subsonicUser, &artistParams)
-	if !ok {
-		return ""
-	}
-
-	var id string
-
-	if len(resp.Subsonic.SearchResult3.Artist) > 0 {
-		id = resp.Subsonic.SearchResult3.Artist[0].Id
-		pdk.Log(pdk.LogDebug, fmt.Sprintf("Artist found by mbid: %s", resp.Subsonic.SearchResult3.Artist[0].Name))
-	} else {
-		id = ""
-		pdk.Log(pdk.LogDebug, fmt.Sprintf("Artist not found by mbid: %s", mbid))
-	}
-
-	b.artistMbidToId[mbid] = id
-	return id
-}
-
-func (b *BrainzPlaylistPlugin) updateSubsonicPlaylist(subsonicUser, playlistName, comment string, songIds []string) error {
-	subsonicResp, ok := b.makeSubsonicRequest("getPlaylists", subsonicUser, &url.Values{"username": []string{subsonicUser}})
-	if !ok {
-		return errors.New("Failed to fetch subsonic playlists for user " + subsonicUser)
-	}
-
-	existingPlaylist := findExistingPlaylist(subsonicResp, playlistName)
-	createPlaylistParams := url.Values{"songId": songIds}
-
-	if existingPlaylist != nil {
-		createPlaylistParams.Add("playlistId", existingPlaylist.Id)
-	} else {
-		createPlaylistParams.Add("name", playlistName)
-	}
-
-	subsonicResp, ok = b.makeSubsonicRequest("createPlaylist", subsonicUser, &createPlaylistParams)
-	if !ok {
-		return fmt.Errorf("failed to create playlist %s", playlistName)
-	}
-
-	if subsonicResp.Subsonic.Playlist != nil && subsonicResp.Subsonic.Playlist.Comment != comment {
-		updatePlaylistParams := url.Values{
-			"playlistId": []string{subsonicResp.Subsonic.Playlist.Id},
-			"comment":    []string{comment},
-		}
-
-		_, ok = b.makeSubsonicRequest("updatePlaylist", subsonicUser, &updatePlaylistParams)
-		if !ok {
-			return fmt.Errorf("Failed to update playlist %s for %s", playlistName, subsonicUser)
-		}
-	}
-
-	return nil
 }
 
 func (b *BrainzPlaylistPlugin) createJams(
@@ -195,7 +90,7 @@ func (b *BrainzPlaylistPlugin) createJams(
 			artistMbids[idx] = artist.ArtistMbid
 		}
 
-		song := b.lookupTrack(userData.NDUsername, recordingMetadata.Recording.Name, mbid, artistMbids)
+		song := b.subsonic.LookupTrack(userData.NDUsername, recordingMetadata.Recording.Name, mbid, artistMbids)
 		if song == nil {
 			missing = append(missing, recordingMetadata.Recording.Name)
 			continue
@@ -265,80 +160,7 @@ func (b *BrainzPlaylistPlugin) createJams(
 		recentCount,
 	)
 
-	return b.updateSubsonicPlaylist(userData.NDUsername, userData.GeneratedPlaylist, comment, songIds)
-}
-
-func (b *BrainzPlaylistPlugin) lookupTrack(
-	subsonicUser, title, mbid string,
-	artistMbids []string,
-) *responses.Child {
-	trackParams := url.Values{
-		"artistCount": []string{"0"},
-		"albumCount":  []string{"0"},
-		"songCount":   []string{"1"},
-		"query":       []string{mbid},
-	}
-
-	resp, ok := b.makeSubsonicRequest("search3", subsonicUser, &trackParams)
-	if !ok {
-		return nil
-	}
-
-	var song *responses.Child
-
-	if len(resp.Subsonic.SearchResult3.Song) > 0 {
-		song = &resp.Subsonic.SearchResult3.Song[0]
-	} else {
-		pdk.Log(pdk.LogDebug, fmt.Sprintf("Could not find track by MBID: %s", mbid))
-		artistIds := map[string]bool{}
-
-		for _, artist := range artistMbids {
-			id := b.findArtistIdByMbid(subsonicUser, artist)
-			if id == "" {
-				return nil
-			}
-
-			artistIds[id] = true
-		}
-
-		trackParams = url.Values{
-			"artistCount": []string{"0"},
-			"albumCount":  []string{"0"},
-			"songCount":   []string{strconv.Itoa(b.fallbackCount)},
-			"query":       []string{title},
-		}
-
-		resp, ok := b.makeSubsonicRequest("search3", subsonicUser, &trackParams)
-		if !ok {
-			return nil
-		}
-
-		for _, subsonicTrack := range resp.Subsonic.SearchResult3.Song {
-			if subsonicTrack.Title == title && len(artistIds) == len(subsonicTrack.Artists) {
-				missing := false
-
-				for _, artist := range subsonicTrack.Artists {
-					found := artistIds[artist.Id]
-
-					if !found {
-						missing = true
-					}
-				}
-
-				if !missing {
-					song = &subsonicTrack
-					break
-				}
-			}
-		}
-
-		if song == nil {
-			pdk.Log(pdk.LogDebug, fmt.Sprintf("Could not find song by matching title and artist mbids: %s, %v", title, artistMbids))
-			return nil
-		}
-	}
-
-	return song
+	return subsonic.UpdatePlaylist(userData.NDUsername, userData.GeneratedPlaylist, comment, songIds)
 }
 
 func (b *BrainzPlaylistPlugin) importPlaylist(
@@ -380,7 +202,7 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		for idx, artist := range track.Extension.Track.AdditionalMetadata.Artists {
 			artistMbids[idx] = artist.MBID
 		}
-		song := b.lookupTrack(subsonicUser, track.Title, mbid, artistMbids)
+		song := b.subsonic.LookupTrack(subsonicUser, track.Title, mbid, artistMbids)
 
 		if song != nil {
 			if rating[song.UserRating] {
@@ -393,32 +215,9 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		}
 	}
 
-	resp, ok := b.makeSubsonicRequest("getPlaylists", subsonicUser, &url.Values{"username": []string{subsonicUser}})
-	if !ok {
-		pdk.Log(pdk.LogError, "Failed to fetch subsonic playlists for user "+subsonicUser)
+	if len(songIds) == 0 {
+		pdk.Log(pdk.LogWarn, fmt.Sprintf("No matching files found for playlist %s. Refusing to create/update", source.PlaylistName))
 		return
-	}
-
-	existingPlaylist := findExistingPlaylist(resp, source.PlaylistName)
-	createPlaylistParams := url.Values{"songId": songIds}
-
-	if existingPlaylist != nil {
-		createPlaylistParams.Add("playlistId", existingPlaylist.Id)
-	} else {
-		createPlaylistParams.Add("name", source.PlaylistName)
-	}
-
-	resp, ok = b.makeSubsonicRequest("createPlaylist", subsonicUser, &createPlaylistParams)
-	if !ok {
-		pdk.Log(pdk.LogError, fmt.Sprintf("failed to create playlist %s", source.PlaylistName))
-		return
-	}
-
-	if existingPlaylist == nil && resp.Subsonic.Playlist != nil {
-		existingPlaylist = &responses.Playlist{
-			Id:        resp.Subsonic.Playlist.Id,
-			SongCount: int32(len(songIds)),
-		}
 	}
 
 	comment := fmt.Sprintf("Generated from source %s\n%s\nUpdated on: %s", source.SourcePatch, listenBrainzPlaylist.Identifier, listenBrainzPlaylist.Date)
@@ -431,35 +230,17 @@ func (b *BrainzPlaylistPlugin) importPlaylist(
 		comment += fmt.Sprintf("\nTracks excluded by rating rule: %s", strings.Join(excluded, ", "))
 	}
 
-	// There are two cases where the existing playlist should be updated: the comment needs updating
-	// and (for whatever reason), the current playlist has no matching tracks, but the existing one does
-	if existingPlaylist != nil && (existingPlaylist.Comment != comment ||
-		(len(songIds) == 0 && existingPlaylist.SongCount != 0)) {
+	err = subsonic.UpdatePlaylist(subsonicUser, source.PlaylistName, comment, songIds)
 
-		// If the current song count is empty, empty the playlist. This can't be done with createPlaylist
-		if len(songIds) == 0 {
-			comment += "\nNo matches were found for ListenBrainz playlist. Playlist content refers to prior playlist"
-			pdk.Log(pdk.LogWarn, fmt.Sprintf("No matching files found for playlist %s", source.PlaylistName))
-		}
+	if err != nil {
+		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to import playlist %s for user %s: %v", source.PlaylistName, subsonicUser, err))
 
-		updatePlaylistParams := url.Values{
-			"playlistId": []string{existingPlaylist.Id},
-			"comment":    []string{comment},
-		}
-
-		_, ok = b.makeSubsonicRequest("updatePlaylist", subsonicUser, &updatePlaylistParams)
-		if !ok {
-			pdk.Log(pdk.LogError, fmt.Sprintf("Failed to update playlist %s for %s", source.PlaylistName, subsonicUser))
-			return
-		}
+	} else {
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully processed playlist %s for user %s", source.PlaylistName, subsonicUser))
 	}
-
-	pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully processed playlist %s for user %s", source.PlaylistName, subsonicUser))
 }
 
 func (b *BrainzPlaylistPlugin) updatePlaylists(users []userConfig) {
-	b.artistMbidToId = map[string]string{}
-
 	for _, userData := range users {
 		ratings := map[int32]bool{}
 
@@ -540,13 +321,13 @@ func (b *BrainzPlaylistPlugin) initialFetch(users []userConfig) error {
 
 userLoop:
 	for _, user := range users {
-		playlistResp, ok := b.makeSubsonicRequest("getPlaylists", user.NDUsername, &url.Values{})
+		playlistResp, ok := subsonic.Call("getPlaylists", user.NDUsername, nil)
 		if !ok {
 			return errors.New("Failed to fetch playlists on initial fetch")
 		}
 
 		for _, source := range user.Sources {
-			pls := findExistingPlaylist(playlistResp, source.PlaylistName)
+			pls := subsonic.FindExistingPlaylist(playlistResp, source.PlaylistName)
 
 			if pls == nil {
 				missing = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, source.PlaylistName))
@@ -560,7 +341,7 @@ userLoop:
 		}
 
 		if user.GeneratePlaylist && user.GeneratedPlaylist != "" {
-			pls := findExistingPlaylist(playlistResp, user.GeneratedPlaylist)
+			pls := subsonic.FindExistingPlaylist(playlistResp, user.GeneratedPlaylist)
 			if pls == nil {
 				missing = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, user.GeneratedPlaylist))
 				break
@@ -593,7 +374,7 @@ func (b *BrainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest
 		return err
 	}
 
-	b.fallbackCount = fallbackCount
+	b.subsonic = subsonic.NewSubsonicHandler(fallbackCount)
 
 	switch req.Payload {
 	case dailyCron:

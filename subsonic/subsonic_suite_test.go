@@ -1,6 +1,6 @@
 //go:build !wasip1
 
-package listenbrainz
+package subsonic
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestListenBrainz(t *testing.T) {
+func TestSubsonic(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "ListenBrainz Test Suite")
+	RunSpecs(t, "Subsonic Test Suite")
 }
