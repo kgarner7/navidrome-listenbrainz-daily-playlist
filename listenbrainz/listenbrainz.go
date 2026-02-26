@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"listenbrainz-daily-playlist/sleep"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
@@ -152,4 +153,9 @@ func LookupRecordings(mbids []string, lbzToken string) (map[string]lbzMetadataLo
 	}
 
 	return metadata, nil
+}
+
+func GetIdentifier(url string) string {
+	split := strings.Split(url, "/")
+	return split[len(split)-1]
 }
