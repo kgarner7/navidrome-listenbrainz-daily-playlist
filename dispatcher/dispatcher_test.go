@@ -1,6 +1,9 @@
 package dispatcher
 
 import (
+	"encoding/json"
+	"os"
+
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
 	. "github.com/onsi/ginkgo/v2"
@@ -19,6 +22,14 @@ var _ = Describe("Dispatcher", func() {
 		host.SchedulerMock.ExpectedCalls = nil
 		pdk.PDKMock.On("Log", mock.Anything, mock.Anything).Maybe()
 	})
+
+	mockUserConfig := func(path string) {
+		f, err := os.ReadFile("testdata/" + path + ".json")
+		if err != nil {
+			panic(err)
+		}
+		pdk.PDKMock.On("GetConfig", "users").Return(string(f), true)
+	}
 
 	Describe("parseRatings", func() {
 		It("should gracefully handle nil", func() {
@@ -60,6 +71,141 @@ var _ = Describe("Dispatcher", func() {
 			Expect(users).To(BeNil())
 			Expect(fallback).To(BeZero())
 			Expect(err).To(MatchError("missing required 'users' configuration"))
+		})
+
+		It("should reject a config where a user doesn't have a username", func() {
+			mockUserConfig("userConfig.singleUser.missingNDUsername")
+
+			users, fallback, err := GetConfig()
+			Expect(users).To(BeNil())
+			Expect(fallback).To(BeZero())
+			Expect(err).To(MatchError("user must have a Navidrome username and ListenBrainz username"))
+		})
+
+		It("should reject a config where a user doesn't have a username", func() {
+			mockUserConfig("userConfig.singleUser.missingLbzUsername")
+
+			users, fallback, err := GetConfig()
+			Expect(users).To(BeNil())
+			Expect(fallback).To(BeZero())
+			Expect(err).To(MatchError("user must have a Navidrome username and ListenBrainz username"))
+		})
+
+		It("return a good user config, no fallback", func() {
+			mockUserConfig("userConfig.complete")
+			pdk.PDKMock.On("GetConfig", "fallbackCount").Return("", false)
+
+			users, fallback, err := GetConfig()
+			Expect(users).To(Equal([]userConfig{
+				{
+					GeneratePlaylist:             true,
+					GeneratedPlaylist:            "Generated Daily Jams",
+					GeneratedPlaylistTrackAge:    60,
+					GeneratedPlaylistArtistLimit: 15,
+					NDUsername:                   "username",
+					LbzUsername:                  "lbz username",
+					LbzToken:                     "1234",
+					Ratings:                      []string{"0", "2", "3", "4", "5"},
+					Sources: []source{
+						{
+							SourcePatch:  "daily-jams",
+							PlaylistName: "playlist name",
+						},
+						{
+							SourcePatch:  "weekly-jams",
+							PlaylistName: "weekly name",
+						},
+					},
+				},
+			}))
+			Expect(fallback).To(Equal(15))
+			Expect(err).To(BeNil())
+		})
+
+		DescribeTable("returns a good config, but invalid fallback values", func(count, error string) {
+			mockUserConfig("userConfig.complete")
+			pdk.PDKMock.On("GetConfig", "fallbackCount").Return(count, true)
+
+			users, fallback, err := GetConfig()
+			Expect(users).To(BeNil())
+			Expect(fallback).To(Equal(0))
+			Expect(err).To(MatchError(error))
+		},
+			Entry("non-integer", "abcd", "fallbackCount is not a valid number"),
+			Entry("zero", "0", "fallbackCount must be between 1 and 500 (inclusive)"),
+			Entry("big number", "501", "fallbackCount must be between 1 and 500 (inclusive)"),
+		)
+	})
+
+	Describe("GetDuration", func() {
+		It("should return 30 for a generate job", func() {
+			j := Job{JobType: GenerateJams}
+			Expect(j.GetDuration()).To(Equal(int32(30)))
+		})
+
+		It("should return 30 for an import job", func() {
+			j := Job{JobType: ImportPlaylist}
+			Expect(j.GetDuration()).To(Equal(int32(30)))
+		})
+
+		It("should return 30 * (1 + len(patch)) for patch fetch job", func() {
+			j := Job{JobType: FetchPatches, Patch: &patchJob{
+				Sources: []source{{}, {}},
+			}}
+			Expect(j.GetDuration()).To(Equal(int32(90)))
+		})
+	})
+
+	Describe("InitialFetch", func() {
+		It("should dispatch a complete rule when no existing playlists exist", func() {
+			mockUserConfig("userConfig.complete")
+			pdk.PDKMock.On("GetConfig", "fallbackCount").Return("", false)
+
+			f, err := os.ReadFile("../subsonic/testdata/noPlaylists.json")
+			if err != nil {
+				panic(err)
+			}
+
+			host.SubsonicAPIMock.On("Call", "/rest/getPlaylists?u=username&username=username").Return(string(f), nil)
+
+			j := Job{
+				JobType:     FetchPatches,
+				Username:    "username",
+				LbzUsername: "lbz username",
+				LbzToken:    "1234",
+				Ratings:     map[int32]bool{int32(0): true, int32(2): true, int32(3): true, int32(4): true, int32(5): true},
+				Patch: &patchJob{
+					Sources: []source{
+						{SourcePatch: "daily-jams", PlaylistName: "playlist name"},
+						{SourcePatch: "weekly-jams", PlaylistName: "weekly name"},
+					},
+				},
+				Fallback: 15,
+			}
+
+			fetchPayload, err := json.Marshal(j)
+			Expect(err).To(BeNil())
+
+			host.SchedulerMock.On("ScheduleOneTime", int32(1), string(fetchPayload), "").Return("", nil)
+
+			j.Patch = nil
+			j.JobType = GenerateJams
+			j.Generate = &generationJob{
+				Name:        "Generated Daily Jams",
+				TrackAge:    60,
+				ArtistLimit: 15,
+			}
+
+			generatePayload, err := json.Marshal(j)
+			Expect(err).To(BeNil())
+
+			host.SchedulerMock.On("ScheduleOneTime", int32(91), string(generatePayload), "").Return("", nil)
+
+			err = InitialFetch()
+			Expect(err).To(BeNil())
+
+			host.SchedulerMock.AssertCalled(GinkgoT(), "ScheduleOneTime", int32(1), string(fetchPayload), "")
+			host.SchedulerMock.AssertCalled(GinkgoT(), "ScheduleOneTime", int32(91), string(generatePayload), "")
 		})
 	})
 })

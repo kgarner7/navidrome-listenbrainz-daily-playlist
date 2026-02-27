@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"listenbrainz-daily-playlist/listenbrainz"
 	"listenbrainz-daily-playlist/subsonic"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -305,17 +306,23 @@ func GetConfig() ([]userConfig, int, error) {
 		return nil, 0, fmt.Errorf("Invalid user mapping: %s. Should be a mapping of Navidrome users to ListenBrainz usernames", users)
 	}
 
+	for _, user := range userMapping {
+		if user.NDUsername == "" || user.LbzUsername == "" {
+			return nil, 0, errors.New("user must have a Navidrome username and ListenBrainz username")
+		}
+	}
+
 	fallback, ok := pdk.GetConfig("fallbackCount")
 	fallbackCount := 15
 
 	if ok {
 		value, err := strconv.Atoi(fallback)
 		if err != nil {
-			return nil, 0, errors.New("`fallbackCount` is not a valid number")
+			return nil, 0, errors.New("fallbackCount is not a valid number")
 		}
 
 		if value < 1 || value > 500 {
-			return nil, 0, errors.New("`fallbackCount` must be between 1 and 500 (inclusive)")
+			return nil, 0, errors.New("fallbackCount must be between 1 and 500 (inclusive)")
 		}
 
 		fallbackCount = value
@@ -359,7 +366,7 @@ func InitialFetch() error {
 	jobs := []Job{}
 
 	for _, user := range users {
-		playlistResp, ok := subsonic.Call("getPlaylists", user.NDUsername, nil)
+		playlistResp, ok := subsonic.Call("getPlaylists", user.NDUsername, &url.Values{"username": []string{user.NDUsername}})
 		if !ok {
 			return errors.New("Failed to fetch playlists on initial fetch")
 		}

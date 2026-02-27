@@ -32,7 +32,7 @@ type Job struct {
 	JobType     JobType        `json:"jobType"`
 	Username    string         `json:"username"`
 	LbzUsername string         `json:"lbzUsername"`
-	LbzToken    string         `json:"string"`
+	LbzToken    string         `json:"lbzToken"`
 	Ratings     map[int32]bool `json:"ratings"`
 	Fallback    int            `json:"fallback"`
 
