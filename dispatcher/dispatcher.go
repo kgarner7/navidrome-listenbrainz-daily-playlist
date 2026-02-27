@@ -307,8 +307,40 @@ func GetConfig() ([]userConfig, int, error) {
 	}
 
 	for _, user := range userMapping {
+		names := map[string]bool{}
+
 		if user.NDUsername == "" || user.LbzUsername == "" {
 			return nil, 0, errors.New("user must have a Navidrome username and ListenBrainz username")
+		}
+
+		if len(user.Sources) > 0 {
+			for _, source := range user.Sources {
+				_, existing := names[source.PlaylistName]
+				if existing {
+					return nil, 0, fmt.Errorf("duplicate playlist name found: %s", source.PlaylistName)
+				}
+
+				names[source.PlaylistName] = true
+			}
+		}
+
+		if user.GeneratePlaylist && user.GeneratedPlaylist != "" {
+			_, existing := names[user.GeneratedPlaylist]
+			if existing {
+				return nil, 0, fmt.Errorf("duplicate playlist name found: %s", user.GeneratedPlaylist)
+			}
+
+			names[user.GeneratedPlaylist] = true
+		}
+
+		if len(user.Playlists) > 0 {
+			for _, playlist := range user.Playlists {
+				_, existing := names[playlist.Name]
+				if existing {
+					return nil, 0, fmt.Errorf("duplicate playlist name found: %s", playlist.Name)
+				}
+				names[playlist.Name] = true
+			}
 		}
 	}
 
@@ -374,18 +406,20 @@ func InitialFetch() error {
 		fetchedSources := []source{}
 		rating := parseRatings(user.Ratings)
 
-		for _, source := range user.Sources {
-			pls := subsonic.FindExistingPlaylist(playlistResp, source.PlaylistName)
+		if len(user.Sources) > 0 {
+			for _, source := range user.Sources {
+				pls := subsonic.FindExistingPlaylist(playlistResp, source.PlaylistName)
 
-			if pls == nil {
-				missing = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, source.PlaylistName))
-				fetchedSources = append(fetchedSources, source)
-				continue
-			}
+				if pls == nil {
+					missing = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, source.PlaylistName))
+					fetchedSources = append(fetchedSources, source)
+					continue
+				}
 
-			if nowTs.Sub(pls.Changed) > 3*time.Hour {
-				olderThanThreeHours = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, source.PlaylistName))
-				fetchedSources = append(fetchedSources, source)
+				if nowTs.Sub(pls.Changed) > 3*time.Hour {
+					olderThanThreeHours = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, source.PlaylistName))
+					fetchedSources = append(fetchedSources, source)
+				}
 			}
 		}
 
@@ -429,6 +463,36 @@ func InitialFetch() error {
 						TrackAge:    user.GeneratedPlaylistTrackAge,
 					},
 				})
+			}
+		}
+
+		if len(user.Playlists) > 0 {
+			for _, item := range user.Playlists {
+				pls := subsonic.FindExistingPlaylist(playlistResp, item.Name)
+				shouldImport := false
+
+				if pls == nil {
+					missing = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, item.Name))
+					shouldImport = true
+				} else if !item.OneTime && nowTs.Sub(pls.Changed) > 3*time.Hour {
+					olderThanThreeHours = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, user.GeneratedPlaylist))
+					shouldImport = true
+				}
+
+				if shouldImport {
+					jobs = append(jobs, Job{
+						JobType:     ImportPlaylist,
+						Username:    user.NDUsername,
+						LbzUsername: user.LbzUsername,
+						LbzToken:    user.LbzToken,
+						Ratings:     rating,
+						Fallback:    fallbackCount,
+						Import: &importJob{
+							Name:  item.Name,
+							LbzId: item.LbzId,
+						},
+					})
+				}
 			}
 		}
 	}

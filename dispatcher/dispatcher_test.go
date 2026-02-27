@@ -64,31 +64,42 @@ var _ = Describe("Dispatcher", func() {
 	})
 
 	Describe("GetConfig", func() {
+
+		DescribeTable("errors", func(path, error string) {
+			mockUserConfig(path)
+			users, fallback, err := GetConfig()
+			Expect(users).To(BeNil())
+			Expect(fallback).To(BeZero())
+			Expect(err).To(MatchError(error))
+		},
+			Entry(
+				"should reject a config where a user doesn't have a username",
+				"userConfig.singleUser.missingNDUsername",
+				"user must have a Navidrome username and ListenBrainz username",
+			),
+			Entry(
+				"should reject a config which has duplicate names in the source patch",
+				"userConfig.duplicateSourceName",
+				"duplicate playlist name found: playlist name",
+			),
+			Entry(
+				"should reject a config where a source patch and generated name clash",
+				"userConfig.duplicatePatchAndGenerated",
+				"duplicate playlist name found: playlist name 2",
+			),
+			Entry(
+				"should reject a config where a source patch and playlist name clash",
+				"userConfig.duplicatePatchAndImport",
+				"duplicate playlist name found: weekly name",
+			),
+		)
+
 		It("should reject a config missing key users", func() {
 			pdk.PDKMock.On("GetConfig", "users").Return("", false)
-
 			users, fallback, err := GetConfig()
 			Expect(users).To(BeNil())
 			Expect(fallback).To(BeZero())
 			Expect(err).To(MatchError("missing required 'users' configuration"))
-		})
-
-		It("should reject a config where a user doesn't have a username", func() {
-			mockUserConfig("userConfig.singleUser.missingNDUsername")
-
-			users, fallback, err := GetConfig()
-			Expect(users).To(BeNil())
-			Expect(fallback).To(BeZero())
-			Expect(err).To(MatchError("user must have a Navidrome username and ListenBrainz username"))
-		})
-
-		It("should reject a config where a user doesn't have a username", func() {
-			mockUserConfig("userConfig.singleUser.missingLbzUsername")
-
-			users, fallback, err := GetConfig()
-			Expect(users).To(BeNil())
-			Expect(fallback).To(BeZero())
-			Expect(err).To(MatchError("user must have a Navidrome username and ListenBrainz username"))
 		})
 
 		It("return a good user config, no fallback", func() {
@@ -115,6 +126,9 @@ var _ = Describe("Dispatcher", func() {
 							SourcePatch:  "weekly-jams",
 							PlaylistName: "weekly name",
 						},
+					},
+					Playlists: []playlist{
+						{Name: "1234", LbzId: "0", OneTime: true},
 					},
 				},
 			}))
@@ -185,7 +199,6 @@ var _ = Describe("Dispatcher", func() {
 
 			fetchPayload, err := json.Marshal(j)
 			Expect(err).To(BeNil())
-
 			host.SchedulerMock.On("ScheduleOneTime", int32(1), string(fetchPayload), "").Return("", nil)
 
 			j.Patch = nil
@@ -198,14 +211,22 @@ var _ = Describe("Dispatcher", func() {
 
 			generatePayload, err := json.Marshal(j)
 			Expect(err).To(BeNil())
-
 			host.SchedulerMock.On("ScheduleOneTime", int32(91), string(generatePayload), "").Return("", nil)
+
+			j.Generate = nil
+			j.JobType = ImportPlaylist
+			j.Import = &importJob{Name: "1234", LbzId: "0"}
+
+			importPayload, err := json.Marshal(j)
+			Expect(err).To(BeNil())
+			host.SchedulerMock.On("ScheduleOneTime", int32(121), string(importPayload), "").Return("", nil)
 
 			err = InitialFetch()
 			Expect(err).To(BeNil())
 
 			host.SchedulerMock.AssertCalled(GinkgoT(), "ScheduleOneTime", int32(1), string(fetchPayload), "")
 			host.SchedulerMock.AssertCalled(GinkgoT(), "ScheduleOneTime", int32(91), string(generatePayload), "")
+			host.SchedulerMock.AssertCalled(GinkgoT(), "ScheduleOneTime", int32(121), string(importPayload), "")
 		})
 	})
 })

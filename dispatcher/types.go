@@ -41,14 +41,21 @@ type Job struct {
 	Patch    *patchJob      `json:"patch,omitempty"`
 }
 
+type playlist struct {
+	Name    string `json:"name"`
+	LbzId   string `json:"lbzId"`
+	OneTime bool   `json:"oneTime"`
+}
+
 type userConfig struct {
-	GeneratePlaylist             bool     `json:"generatePlaylist"`
-	GeneratedPlaylist            string   `json:"generatedPlaylist"`
-	GeneratedPlaylistTrackAge    int      `json:"generatedPlaylistTrackAge"`
-	GeneratedPlaylistArtistLimit int      `json:"generatedPlaylistArtistLimit"`
-	NDUsername                   string   `json:"username"`
-	LbzUsername                  string   `json:"lbzUsername"`
-	LbzToken                     string   `json:"lbzToken"`
-	Ratings                      []string `json:"ratings,omitempty"`
-	Sources                      []source `json:"sources"`
+	GeneratePlaylist             bool       `json:"generatePlaylist"`
+	GeneratedPlaylist            string     `json:"generatedPlaylist"`
+	GeneratedPlaylistTrackAge    int        `json:"generatedPlaylistTrackAge"`
+	GeneratedPlaylistArtistLimit int        `json:"generatedPlaylistArtistLimit"`
+	NDUsername                   string     `json:"username"`
+	LbzUsername                  string     `json:"lbzUsername"`
+	LbzToken                     string     `json:"lbzToken"`
+	Ratings                      []string   `json:"ratings,omitempty"`
+	Sources                      []source   `json:"sources"`
+	Playlists                    []playlist `json:"playlists"`
 }
