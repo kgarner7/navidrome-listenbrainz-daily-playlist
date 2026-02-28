@@ -3,7 +3,7 @@
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
   "permissions": {
@@ -104,6 +104,32 @@
                     }
                   },
                   "required": ["playlistName", "sourcePatch"]
+                }
+              },
+              "playlists": {
+                "type": "array",
+                "title": "Extra playlists to import (by playlist ID)",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "lbzId": {
+                      "type": "string",
+                      "title": "ListenBrainz Playlist ID",
+                      "description": "The playlist ID. You can get this by navigating the playlist and taking the part of the url after https://listenbrainz.org/playlist, or exporting the playlist to JSFP and using the last part of the identifier",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "title": "Playlist name to be imported",
+                      "description": "The name of the playlist as it will be created/updated for the user. This playlist will be overridden",
+                      "minLength": 1
+                    },
+                    "oneTime": {
+                      "type": "boolean",
+                      "title": "Only update playlist once (import)"
+                    }
+                  },
+                  "required": ["lbzId", "name"]
                 }
               },
               "ratings": {
@@ -251,6 +277,30 @@
                         {
                           "type": "Control",
                           "scope": "#/properties/playlistName"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/playlists",
+                  "options": {
+                    "elementLabelProp": "name",
+                    "detail": {
+                      "type": "VerticalLayout",
+                      "elements": [
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/lbzId"
+                        },
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/name"
+                        },
+                        {
+                          "type": "Control",
+                          "scope": "#/properties/oneTime"
                         }
                       ]
                     }
