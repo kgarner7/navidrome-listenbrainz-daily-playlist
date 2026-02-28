@@ -49,6 +49,8 @@ func (j *Job) dispatchSourceFetching() error {
 		return errors.New("attempting to dispatch patch fetch without patch")
 	}
 
+	pdk.Log(pdk.LogInfo, fmt.Sprintf("Searching ListenBrainz for generated playlists for %s", j.Username))
+
 	playlists, err := listenbrainz.GetCreatedForPlaylists(j.LbzUsername, j.LbzToken)
 	if err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlists for user %s: %v", j.Username, err))
@@ -233,6 +235,8 @@ func (j *Job) dispatchImport() error {
 		return errors.New("attempting to call import job without import payload")
 	}
 
+	pdk.Log(pdk.LogInfo, fmt.Sprintf("Importing playlist `%s` (%s)", j.Import.Name, j.Import.LbzId))
+
 	playlist, err := listenbrainz.GetPlaylist(j.Import.LbzId, j.LbzToken)
 	if err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to import playlist %s: %v", j.Import.LbzId, err))
@@ -242,8 +246,6 @@ func (j *Job) dispatchImport() error {
 	songIds := []string{}
 	missing := []string{}
 	excluded := []string{}
-
-	pdk.Log(pdk.LogInfo, fmt.Sprintf("Importing playlist `%s`", playlist.Title))
 
 	subsonicHandler := subsonic.NewSubsonicHandler(j.Fallback)
 
@@ -417,7 +419,7 @@ func InitialFetch() error {
 				}
 
 				if nowTs.Sub(pls.Changed) > 3*time.Hour {
-					olderThanThreeHours = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, source.PlaylistName))
+					olderThanThreeHours = append(olderThanThreeHours, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, source.PlaylistName))
 					fetchedSources = append(fetchedSources, source)
 				}
 			}
@@ -445,7 +447,7 @@ func InitialFetch() error {
 				missing = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, user.GeneratedPlaylist))
 				shouldGenerate = true
 			} else if nowTs.Sub(pls.Changed) > 3*time.Hour {
-				olderThanThreeHours = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, user.GeneratedPlaylist))
+				olderThanThreeHours = append(olderThanThreeHours, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, user.GeneratedPlaylist))
 				shouldGenerate = true
 			}
 
@@ -475,7 +477,7 @@ func InitialFetch() error {
 					missing = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, item.Name))
 					shouldImport = true
 				} else if !item.OneTime && nowTs.Sub(pls.Changed) > 3*time.Hour {
-					olderThanThreeHours = append(missing, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, user.GeneratedPlaylist))
+					olderThanThreeHours = append(olderThanThreeHours, fmt.Sprintf("User: `%s`, Source: `%s`", user.NDUsername, item.Name))
 					shouldImport = true
 				}
 
