@@ -75,12 +75,15 @@ This requires configuring one or more users, and specifying which playlists to u
     - `Playlists to import`: a list of one or more playlist types to be imported
         - `Source`: This is a ListenBrainz internal field which specifies how the playlist is generated. Examples include `weekly-jams`, `daily-jams` and `weekly-exploration`.
         - `Playlist name to be imported`: the name of the playlist that will be created within Navidrome. **CAUTION**: if a playlist with this name already exists, it will be overridden.
+    - `Extra playlists to import (by playlist ID)`: a list of additional playlists to import, using playlist ID
+        - `ListenBrainz PLaylist ID`: the ID of the playlist. When visiting a playlist like `https://listenbrainz.org/playlist/00000000-0000-0000-0000-000000000000/`, the ID is the part of of the playlist between (excluding) `/playlist/` and the last `/` (in this example, `00000000-0000-0000-0000-000000000000`). Alternatively, if you export as JSPF, this is the last part of the playlist `identifier` field.
+        - `Playlist name to be imported`: the name of the playlist that will be created within Navidrome.
     - `Include tracks with this rating.`: if you only want to import tracks with certain ratings, uncheck one or more boxes
 - `Hour to fetch playlists (24-hour format)`: the hour (24-hour moment) to fetch/generate all playlists. This is then delayed by a random interval up to an hour
 - `Fallback search count`: If a match isn't found by track name, how many tracks to search by until giving up. Between 1 and 500, inclusive
 - `Check for out of date playlists on plugin start`: If Navidrome or the plugin is restarted, check if any playlists are out of date (at least three hours old).
 
-![Image showing a full configuration. There is one user: ND username <redacted>; LBZ username <lbz-username> LBZ token uuidv4 of all zeros; generate playlist is true with name "Generated Daily Jams", excluding tracks played in the last 60 days, and allowing at most 2 tracks per artist. Two playlists are set to be imported, one is expanded with source "daily-jams" and name "ListenBrainz Daily Jams", and the other "weekly-jams" is not expanded. All ratings except 1 are selected, and the playlists are scheduled to be fetched around 7:00 AM, with a fallback search of 15 tracks. Plugin will check for out of date playlists on start](./assets/full_config.png)
+![Image showing a full configuration. There is one user: ND username <redacted>; LBZ username lbz-username LBZ token uuidv4 of all zeros; generate playlist is true with name "Generated Daily Jams", excluding tracks played in the last 60 days, and allowing at most 2 tracks per artist. Two playlists are set to be imported, one is expanded with source "daily-jams" and name "ListenBrainz Daily Jams", and the other "weekly-jams" is not expanded. One playlist is to be imported by playlist ID, with a token UUID of all 0s. All ratings except 1 are selected, and the playlists are scheduled to be fetched around 7:00 AM, with a fallback search of 15 tracks. Plugin will check for out of date playlists on start](./assets/full_config.png)
 
 To get another valid `source`, visit your `https://listenbrainz.org/user/<your username>/recommendations/`.
 Click on the inspect playlist `</>` icon and use the string in `source_patch`.
