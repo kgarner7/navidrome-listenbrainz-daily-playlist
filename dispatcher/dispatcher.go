@@ -16,22 +16,15 @@ import (
 	"github.com/navidrome/navidrome/server/subsonic/responses"
 )
 
-const JOB_DURATION = int32(30)
+const (
+	taskTimeMs = 30_000
+	queueName  = "job-queue"
+)
 
-func (j *Job) GetDuration() int32 {
-	switch j.JobType {
-	case FetchPatches:
-		if j.Patch != nil {
-			return JOB_DURATION * int32(1+len(j.Patch.Sources))
-		}
-
-		return JOB_DURATION
-	default:
-		return JOB_DURATION
-	}
-}
-
-func (j *Job) Dispatch() error {
+// Dispatches a job.
+// The first return value denotes an unrecoverable error (do not retry)
+// The second return value is an error that should be reattempted
+func (j *Job) Dispatch() (string, error) {
 	switch j.JobType {
 	case FetchPatches:
 		return j.dispatchSourceFetching()
@@ -40,24 +33,26 @@ func (j *Job) Dispatch() error {
 	case ImportPlaylist:
 		return j.dispatchImport()
 	default:
-		return fmt.Errorf("unexpected job %s", j.JobType)
+		return fmt.Sprintf("unexpected job %s", j.JobType), nil
 	}
 }
 
-func (j *Job) dispatchSourceFetching() error {
+func (j *Job) dispatchSourceFetching() (string, error) {
 	if j.Patch == nil {
-		return errors.New("attempting to dispatch patch fetch without patch")
+		return "attempting to dispatch patch fetch without patch", nil
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Searching ListenBrainz for generated playlists for %s", j.Username))
 
 	playlists, err := listenbrainz.GetCreatedForPlaylists(j.LbzUsername, j.LbzToken)
 	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlists for user %s: %v", j.Username, err))
-		return err
+		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlists for user %s: %v", j.Username, err.Error))
+		return err.Result()
 	}
 
-	for idx, source := range j.Patch.Sources {
+	var ignoredError error = nil
+
+	for _, source := range j.Patch.Sources {
 		playlistId := ""
 
 		for _, plsMetadata := range playlists {
@@ -69,7 +64,7 @@ func (j *Job) dispatchSourceFetching() error {
 
 		if playlistId == "" {
 			newErr := fmt.Errorf("No playlist for ListenBrainz user `%s` found with algorithm/source patch `%s`", j.LbzUsername, source.SourcePatch)
-			err = errors.Join(err, newErr)
+			ignoredError = errors.Join(ignoredError, newErr)
 			pdk.Log(pdk.LogError, newErr.Error())
 			continue
 		}
@@ -90,22 +85,26 @@ func (j *Job) dispatchSourceFetching() error {
 		payload, serializeErr := json.Marshal(newJob)
 		if serializeErr != nil {
 			pdk.Log(pdk.LogError, fmt.Sprintf("Error serializing import job: %v", serializeErr))
-			err = errors.Join(err, serializeErr)
+			ignoredError = errors.Join(ignoredError, serializeErr)
 			continue
 		}
 
-		_, scheduleErr := host.SchedulerScheduleOneTime(JOB_DURATION*int32(idx+1), string(payload), "")
-		if scheduleErr != nil {
-			return scheduleErr
+		_, taskErr := host.TaskEnqueue(queueName, payload)
+		if taskErr != nil {
+			return "", taskErr
 		}
 	}
 
-	return err
+	if ignoredError != nil {
+		return ignoredError.Error(), nil
+	}
+
+	return "", nil
 }
 
-func (j *Job) dispatchGenerate() error {
+func (j *Job) dispatchGenerate() (string, error) {
 	if j.Generate == nil {
-		return errors.New("attempting to call generate job without generate payload")
+		return "attempting to call generate job without generate payload", nil
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Generating playlist `%s` for user %s", j.Generate.Name, j.Username))
@@ -114,8 +113,8 @@ func (j *Job) dispatchGenerate() error {
 
 	recommendations, err := listenbrainz.GetRecommendations(j.LbzUsername, j.LbzToken)
 	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to fetch recommendations for user %s: %v", j.Username, err))
-		return err
+		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to fetch recommendations for user %s: %v", j.Username, err.Error))
+		return err.Result()
 	}
 
 	mbids := make([]string, len(recommendations.Payload.MBIDs))
@@ -125,8 +124,8 @@ func (j *Job) dispatchGenerate() error {
 
 	metadata, err := listenbrainz.LookupRecordings(mbids, j.LbzToken)
 	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to lookup %d recordings for user %s: %v", len(mbids), j.Username, err))
-		return err
+		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to lookup %d recordings for user %s: %v", len(mbids), j.Username, err.Error))
+		return err.Result()
 	}
 
 	allowedSongs := []*responses.Child{}
@@ -222,25 +221,25 @@ func (j *Job) dispatchGenerate() error {
 
 	err = subsonic.UpdatePlaylist(j.Username, j.Generate.Name, comment, songIds)
 	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to import playlist `%s` for user %s: %v", j.Generate.Name, j.Username, err))
-		return err
+		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to import playlist `%s` for user %s: %v", j.Generate.Name, j.Username, err.Error))
+		return err.Result()
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully generated playlist `%s` for user %s", j.Generate.Name, j.Username))
-	return nil
+	return "", nil
 }
 
-func (j *Job) dispatchImport() error {
+func (j *Job) dispatchImport() (string, error) {
 	if j.Import == nil {
-		return errors.New("attempting to call import job without import payload")
+		return "attempting to call import job without import payload", nil
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Importing playlist `%s` (%s)", j.Import.Name, j.Import.LbzId))
 
 	playlist, err := listenbrainz.GetPlaylist(j.Import.LbzId, j.LbzToken)
 	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to import playlist %s: %v", j.Import.LbzId, err))
-		return err
+		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to import playlist %s: %v", j.Import.LbzId, err.Error))
+		return err.Result()
 	}
 
 	songIds := []string{}
@@ -272,7 +271,7 @@ func (j *Job) dispatchImport() error {
 
 	if len(songIds) == 0 {
 		pdk.Log(pdk.LogWarn, fmt.Sprintf("No matching files found for playlist %s. Refusing to create/update", name))
-		return nil
+		return "", nil
 	}
 
 	comment := fmt.Sprintf("Imported from playlist %s\nUpdated on: %s", playlist.Identifier, playlist.Date)
@@ -288,12 +287,12 @@ func (j *Job) dispatchImport() error {
 	err = subsonic.UpdatePlaylist(j.Username, name, comment, songIds)
 
 	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to import playlist `%s` for user %s: %v", name, j.Username, err))
-		return err
+		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to import playlist `%s` for user %s: %v", name, j.Username, err.Error))
+		return err.Result()
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully processed playlist `%s` for user %s", name, j.Username))
-	return nil
+	return "", nil
 }
 
 func GetConfig() ([]userConfig, int, error) {
@@ -400,8 +399,8 @@ func InitialFetch() error {
 	jobs := []Job{}
 
 	for _, user := range users {
-		playlistResp, ok := subsonic.Call("getPlaylists", user.NDUsername, &url.Values{"username": []string{user.NDUsername}})
-		if !ok {
+		playlistResp, err := subsonic.Call("getPlaylists", user.NDUsername, &url.Values{"username": []string{user.NDUsername}})
+		if err != nil {
 			return errors.New("Failed to fetch playlists on initial fetch")
 		}
 
@@ -500,7 +499,6 @@ func InitialFetch() error {
 	}
 
 	if len(jobs) > 0 {
-		delay := int32(1)
 		pdk.Log(pdk.LogInfo,
 			fmt.Sprintf("Missing or outdated playlists, fetching on initial sync. Missing: %v, Outdated: %v",
 				missing,
@@ -513,16 +511,24 @@ func InitialFetch() error {
 				return err
 			}
 
-			_, err = host.SchedulerScheduleOneTime(delay, string(payload), "")
+			_, err = host.TaskEnqueue(queueName, payload)
 			if err != nil {
 				return err
 			}
-
-			delay += job.GetDuration()
 		}
 	} else {
 		pdk.Log(pdk.LogInfo, "No missing/outdated playlists, not fetching")
 	}
 
 	return nil
+}
+
+func CreateQueue() error {
+	return host.TaskCreateQueue(queueName, host.QueueConfig{
+		Concurrency: 1,
+		MaxRetries:  5,
+		RetentionMs: 60_000,
+		BackoffMs:   5 * taskTimeMs,
+		DelayMs:     taskTimeMs,
+	})
 }

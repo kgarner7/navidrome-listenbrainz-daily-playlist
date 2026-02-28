@@ -11,6 +11,7 @@ import (
 	"github.com/navidrome/navidrome/plugins/pdk/go/lifecycle"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
 	"github.com/navidrome/navidrome/plugins/pdk/go/scheduler"
+	"github.com/navidrome/navidrome/plugins/pdk/go/taskworker"
 )
 
 const (
@@ -30,18 +31,28 @@ func (b *brainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest
 	case fetch:
 		return dispatcher.InitialFetch()
 	default:
-		job := dispatcher.Job{}
-		err := json.Unmarshal([]byte(req.Payload), &job)
-
-		if err != nil {
-			pdk.Log(pdk.LogError, fmt.Sprintf("Unable to parse job: %s, %v", req.Payload, err))
-			return err
-		}
-
-		pdk.Log(pdk.LogTrace, "Dispatching job: "+req.Payload)
-
-		return job.Dispatch()
+		return fmt.Errorf("unexpected scheduler task %s", req.Payload)
 	}
+}
+
+func (b *brainzPlaylistPlugin) OnTaskExecute(req taskworker.TaskExecuteRequest) (string, error) {
+	var job dispatcher.Job
+	err := json.Unmarshal(req.Payload, &job)
+
+	if err != nil {
+		msg := fmt.Sprintf("unable to deserialize callback to a valid job: %v\n%s", err, req.Payload)
+		pdk.Log(pdk.LogError, msg)
+		return msg, nil
+	}
+
+	pdk.Log(pdk.LogTrace, "Dispatching job: "+string(req.Payload))
+	unrecoverableError, retryError := job.Dispatch()
+
+	if unrecoverableError != "" {
+		pdk.Log(pdk.LogError, "An unrecoverable error occurred: "+unrecoverableError)
+	}
+
+	return unrecoverableError, retryError
 }
 
 func (b *brainzPlaylistPlugin) OnInit() error {
@@ -53,6 +64,11 @@ func (b *brainzPlaylistPlugin) OnInit() error {
 	schedInt, err := strconv.Atoi(schedule)
 	if err != nil {
 		return fmt.Errorf("Invalid schedule %s: %v", schedule, err)
+	}
+
+	err = dispatcher.CreateQueue()
+	if err != nil {
+		return fmt.Errorf("Unable to create task queue: %v", err)
 	}
 
 	if schedInt < 0 || schedInt > 23 {
@@ -87,4 +103,5 @@ func main() {}
 func init() {
 	lifecycle.Register(&brainzPlaylistPlugin{})
 	scheduler.Register(&brainzPlaylistPlugin{})
+	taskworker.Register(&brainzPlaylistPlugin{})
 }
