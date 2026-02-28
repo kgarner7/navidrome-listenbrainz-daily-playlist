@@ -1,10 +1,10 @@
 module listenbrainz-daily-playlist
 
-go 1.25
+go 1.25.0
 
 require (
-	github.com/navidrome/navidrome v0.60.3
-	github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260224012838-2bb13e5ff1b6
+	github.com/navidrome/navidrome v0.60.4-0.20260228163657-e5604004f951
+	github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260228163657-e5604004f951
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/stretchr/testify v1.11.1
@@ -27,5 +27,6 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

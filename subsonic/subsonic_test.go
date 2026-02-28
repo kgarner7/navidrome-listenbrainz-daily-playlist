@@ -5,6 +5,8 @@ package subsonic
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"listenbrainz-daily-playlist/retry"
 	"net/url"
 	"os"
 
@@ -78,9 +80,12 @@ var _ = Describe("", func() {
 		It("Handles an error returned from subsonic", func() {
 			host.SubsonicAPIMock.On("Call", "/rest/ping?u=test").Return("", errors.New("fetch failed"))
 
-			resp, ok := Call("ping", user, nil)
+			resp, err := Call("ping", user, nil)
 			Expect(resp).To(BeNil())
-			Expect(ok).To(BeFalse())
+			Expect(err).To(Equal(&retry.Error{
+				Error:     errors.New("fetch failed"),
+				Retryable: false,
+			}))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 
 			validateCalls()
@@ -89,9 +94,10 @@ var _ = Describe("", func() {
 		It("handles malformed json returned from application", func() {
 			host.SubsonicAPIMock.On("Call", "/rest/ping?u=test").Return("{", nil)
 
-			resp, ok := Call("ping", user, nil)
+			resp, err := Call("ping", user, nil)
 			Expect(resp).To(BeNil())
-			Expect(ok).To(BeFalse())
+			Expect(err.Retryable).To(BeFalse())
+			Expect(err.Error).ToNot(BeNil())
 
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 			validateCalls()
@@ -99,9 +105,25 @@ var _ = Describe("", func() {
 
 		It("handles error request", func() {
 			mockSubsonicResponse("ping", nil, "error")
-			resp, ok := Call("ping", user, nil)
+			resp, err := Call("ping", user, nil)
 			Expect(resp).To(BeNil())
-			Expect(ok).To(BeFalse())
+			Expect(err).To(Equal(&retry.Error{
+				Error:     fmt.Errorf("Subsonic status is not ok: (40) Wrong username or password"),
+				Retryable: false,
+			}))
+
+			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
+			validateCalls()
+		})
+
+		It("handles internal server error (retryable error)", func() {
+			mockSubsonicResponse("ping", nil, "errorRetryable")
+			resp, err := Call("ping", user, nil)
+			Expect(resp).To(BeNil())
+			Expect(err).To(Equal(&retry.Error{
+				Error:     fmt.Errorf("Subsonic status is not ok: (0) Internal server error: unknown"),
+				Retryable: true,
+			}))
 
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 			validateCalls()
@@ -109,7 +131,7 @@ var _ = Describe("", func() {
 
 		It("handles successful request", func() {
 			mockSubsonicResponse("ping", nil, "ping.success")
-			resp, ok := Call("ping", user, nil)
+			resp, err := Call("ping", user, nil)
 			Expect(resp).To(BeComparableTo(&responses.JsonWrapper{
 				Subsonic: responses.Subsonic{
 					Status:        "ok",
@@ -119,7 +141,7 @@ var _ = Describe("", func() {
 					OpenSubsonic:  true,
 				},
 			}))
-			Expect(ok).To(BeTrue())
+			Expect(err).To(BeNil())
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 			validateCalls()
 		})
@@ -260,7 +282,10 @@ var _ = Describe("", func() {
 			mockSubsonicResponse("getPlaylists", &url.Values{"username": []string{user}}, "error")
 
 			err := UpdatePlaylist(user, title, "This is a comment", songIds)
-			Expect(err).To(MatchError("Failed to fetch subsonic playlists for user test"))
+			Expect(err).To(Equal(&retry.Error{
+				Error:     fmt.Errorf("Subsonic status is not ok: (40) Wrong username or password"),
+				Retryable: false,
+			}))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 			validateCalls()
 		})
@@ -270,7 +295,10 @@ var _ = Describe("", func() {
 			mockSubsonicResponse("createPlaylist", &url.Values{"name": []string{title}, "songId": songIds}, "error")
 
 			err := UpdatePlaylist(user, title, "This is a comment", songIds)
-			Expect(err).To(MatchError("Failed to create playlist " + title))
+			Expect(err).To(Equal(&retry.Error{
+				Error:     fmt.Errorf("Subsonic status is not ok: (40) Wrong username or password"),
+				Retryable: false,
+			}))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(2))
 			validateCalls()
 		})
@@ -281,8 +309,23 @@ var _ = Describe("", func() {
 			mockSubsonicResponse("updatePlaylist", &url.Values{"playlistId": []string{playlistId}, "comment": []string{"this is a comment"}}, "error")
 
 			err := UpdatePlaylist(user, title, "this is a comment", songIds)
-			Expect(err).To(MatchError("Failed to update playlist " + title + " for " + user))
+			Expect(err).To(Equal(&retry.Error{
+				Error:     fmt.Errorf("Subsonic status is not ok: (40) Wrong username or password"),
+				Retryable: false,
+			}))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(3))
+			validateCalls()
+		})
+
+		It("Errors in a retryable way if an error occurs", func() {
+			mockSubsonicResponse("getPlaylists", &url.Values{"username": []string{user}}, "errorRetryable")
+
+			err := UpdatePlaylist(user, title, "This is a comment", songIds)
+			Expect(err).To(Equal(&retry.Error{
+				Error:     fmt.Errorf("Subsonic status is not ok: (0) Internal server error: unknown"),
+				Retryable: true,
+			}))
+			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 			validateCalls()
 		})
 

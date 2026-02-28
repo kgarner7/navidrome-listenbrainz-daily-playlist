@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
+  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/feat/plugin-taskqueue-host-service/plugins/manifest-schema.json",
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
@@ -16,6 +16,10 @@
     },
     "subsonicapi": {
       "reason": "Requires subsonic API to search for songs and create/update playlists on behalf of users"
+    },
+    "taskqueue": {
+      "reason": "",
+      "maxConcurrency": 1
     },
     "users": {
       "reason": "Requires user access for subsonic API"
