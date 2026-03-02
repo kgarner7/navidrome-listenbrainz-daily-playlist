@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/navidrome/navidrome v0.60.4-0.20260228163657-e5604004f951
-	github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260228163657-e5604004f951
+	github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260302044457-d14fc83519ea
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/stretchr/testify v1.11.1

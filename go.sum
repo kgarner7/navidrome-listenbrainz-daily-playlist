@@ -39,8 +39,8 @@ github.com/mfridman/tparse v0.18.0 h1:wh6dzOKaIwkUGyKgOntDW4liXSo37qg5AXbIhkMV3v
 github.com/mfridman/tparse v0.18.0/go.mod h1:gEvqZTuCgEhPbYk/2lS3Kcxg1GmTxxU7kTC8DvP0i/A=
 github.com/navidrome/navidrome v0.60.4-0.20260228163657-e5604004f951 h1:2v+QRj1POhexI5LhP4oeEXGnqntrF7jt9UBa+uxTh+8=
 github.com/navidrome/navidrome v0.60.4-0.20260228163657-e5604004f951/go.mod h1:DMftMqtjm7x472IKb4Nrs7z4NcoDLyqxe7M6qLZI1GQ=
-github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260228163657-e5604004f951 h1:dtgHWqFsZHZkEdOE0T+KTIy/65CAu79bNcyPnTdK5Wo=
-github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260228163657-e5604004f951/go.mod h1:5aedoevIXlwUFuR7kbd/WkjaiLg87D3XUFRGIwDBroo=
+github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260302044457-d14fc83519ea h1:w0tED/gAW7RC9YImhT0+QECiM3fupBvdYf/04OBrBK4=
+github.com/navidrome/navidrome/plugins/pdk/go v0.0.0-20260302044457-d14fc83519ea/go.mod h1:5aedoevIXlwUFuR7kbd/WkjaiLg87D3XUFRGIwDBroo=
 github.com/onsi/ginkgo/v2 v2.28.1 h1:S4hj+HbZp40fNKuLUQOYLDgZLwNUVn19N3Atb98NCyI=
 github.com/onsi/ginkgo/v2 v2.28.1/go.mod h1:CLtbVInNckU3/+gC8LzkGUb9oF+e8W8TdUsxPwvdOgE=
 github.com/onsi/gomega v1.39.1 h1:1IJLAad4zjPn2PsnhH70V4DKRFlrCzGBNrNaru+Vf28=

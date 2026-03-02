@@ -532,3 +532,12 @@ func CreateQueue() error {
 		DelayMs:     taskTimeMs,
 	})
 }
+
+func ClearQueue() {
+	count, err := host.TaskClearQueue(queueName)
+	if err != nil {
+		pdk.Log(pdk.LogError, "Failed to clear task queue: "+err.Error())
+	} else if count > 0 {
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("Removed %d job(s) from task queue", count))
+	}
+}
