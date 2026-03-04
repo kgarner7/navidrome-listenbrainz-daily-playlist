@@ -16,7 +16,7 @@ import (
 
 const (
 	lbzEndpoint = "https://api.listenbrainz.org/1"
-	userAgent   = "NavidromePlaylistImporter/4.0.2"
+	userAgent   = "NavidromePlaylistImporter/4.0.3"
 )
 
 func processRatelimit(resp *host.HTTPResponse) {

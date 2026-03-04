@@ -66,16 +66,16 @@ func (b *brainzPlaylistPlugin) OnInit() error {
 		return fmt.Errorf("Invalid schedule %s: %v", schedule, err)
 	}
 
+	if schedInt < 0 || schedInt > 23 {
+		return fmt.Errorf("Schedule is not a valid hour (between [0, 23], inclusive): %d", schedInt)
+	}
+
 	err = dispatcher.CreateQueue()
 	if err != nil {
 		return fmt.Errorf("Unable to create task queue: %v", err)
 	}
 
 	dispatcher.ClearQueue()
-
-	if schedInt < 0 || schedInt > 23 {
-		return fmt.Errorf("Schedule is not a valid hour (between [0, 23], inclusive): %d", schedInt)
-	}
 
 	_, _, err = dispatcher.GetConfig()
 	if err != nil {

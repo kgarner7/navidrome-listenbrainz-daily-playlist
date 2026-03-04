@@ -4,6 +4,7 @@ package dispatcher
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"time"
 
@@ -68,7 +69,6 @@ var _ = Describe("Dispatcher", func() {
 	})
 
 	Describe("GetConfig", func() {
-
 		DescribeTable("errors", func(path, error string) {
 			mockUserConfig(path)
 			users, fallback, err := GetConfig()
@@ -315,6 +315,21 @@ var _ = Describe("Dispatcher", func() {
 				"Missing or outdated playlists, fetching on initial sync. Missing: [User: `username`, Source: `playlist name`], Outdated: [User: `username`, Source: `1234`]",
 			),
 		)
+	})
 
+	Describe("ClearQueue", func() {
+		It("should successfully clear queue", func() {
+			host.TaskMock.On("ClearQueue", "job-queue").Return(int64(1), nil)
+			ClearQueue()
+			host.TaskMock.AssertCalled(GinkgoT(), "ClearQueue", "job-queue")
+			pdk.PDKMock.AssertCalled(GinkgoT(), "Log", pdk.LogInfo, "Removed 1 job(s) from task queue")
+		})
+
+		It("should ignore clear error but log in error", func() {
+			host.TaskMock.On("ClearQueue", "job-queue").Return(int64(0), errors.New("Error"))
+			ClearQueue()
+			host.TaskMock.AssertCalled(GinkgoT(), "ClearQueue", "job-queue")
+			pdk.PDKMock.AssertCalled(GinkgoT(), "Log", pdk.LogError, "Failed to clear task queue: Error")
+		})
 	})
 })

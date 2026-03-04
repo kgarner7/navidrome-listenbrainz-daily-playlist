@@ -33,7 +33,7 @@ var _ = Describe("ListenBrainz endpoints", func() {
 	makeRequest := func(url, token string, body []byte) host.HTTPRequest {
 		headers := map[string]string{
 			"Accept":     "application/json",
-			"User-Agent": userAgent,
+			"User-Agent": "NavidromePlaylistImporter/4.0.3",
 		}
 
 		if token != "" {
