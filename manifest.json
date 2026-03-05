@@ -18,7 +18,7 @@
       "reason": "Requires subsonic API to search for songs and create/update playlists on behalf of users"
     },
     "taskqueue": {
-      "reason": "",
+      "reason": "Uses task queue to process requests to ListenBrainz (searching for generated playlists, importing specific playlists, fetching recommendations)",
       "maxConcurrency": 1
     },
     "users": {
