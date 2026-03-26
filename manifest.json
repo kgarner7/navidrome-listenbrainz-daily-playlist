@@ -177,7 +177,7 @@
           "title": "Hour to fetch playlists (24-hour format)",
           "description": "NOTE: To be kind to LBZ servers, this fetch happens at a random interval between this time and one hour later.",
           "minimum": 0,
-          "maximum": 24,
+          "maximum": 23,
           "default": 8
         },
         "checkOnStartup": {
