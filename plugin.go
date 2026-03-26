@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"listenbrainz-daily-playlist/dispatcher"
-	"math/rand"
 	"strconv"
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
@@ -22,17 +21,7 @@ const (
 type brainzPlaylistPlugin struct{}
 
 func (b *brainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
-	switch req.Payload {
-	case dailyCron:
-		delay := rand.Int31n(3600)
-		pdk.Log(pdk.LogInfo, fmt.Sprintf("Delaying fetch by %d seconds", delay))
-		_, err := host.SchedulerScheduleOneTime(delay, fetch, fetch)
-		return err
-	case fetch:
-		return dispatcher.InitialFetch()
-	default:
-		return fmt.Errorf("unexpected scheduler task %s", req.Payload)
-	}
+	return dispatcher.InitialFetch()
 }
 
 func (b *brainzPlaylistPlugin) OnTaskExecute(req taskworker.TaskExecuteRequest) (string, error) {
@@ -82,7 +71,7 @@ func (b *brainzPlaylistPlugin) OnInit() error {
 		return err
 	}
 
-	_, err = host.SchedulerScheduleRecurring(fmt.Sprintf("0 %d * * *", schedInt), dailyCron, dailyCron)
+	_, err = host.SchedulerScheduleRecurring(fmt.Sprintf("0~59 %d * * *", schedInt), dailyCron, dailyCron)
 	if err != nil {
 		return fmt.Errorf("Failed to schedule playlist sync. Is your schedule a valid cron expression? %v", err)
 	}
