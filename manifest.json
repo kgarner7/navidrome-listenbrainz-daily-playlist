@@ -3,7 +3,7 @@
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
-  "version": "4.0.3",
+  "version": "4.0.4",
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
   "permissions": {
@@ -85,10 +85,12 @@
                 "title": "Playlists to import",
                 "default": [
                   {
-                    "sourcePatch": "daily-jams", "playlistName": "ListenBrainz Daily Jams"
+                    "sourcePatch": "daily-jams",
+                    "playlistName": "ListenBrainz Daily Jams"
                   },
                   {
-                    "sourcePatch": "weekly-jams", "playlistName": "ListenBrainz Weekly Jams"
+                    "sourcePatch": "weekly-jams",
+                    "playlistName": "ListenBrainz Weekly Jams"
                   }
                 ],
                 "items": {
@@ -167,7 +169,14 @@
                 "properties": {
                   "generatePlaylist": { "const": true }
                 },
-                "required": ["generatedPlaylist", "generatedPlaylistArtistLimit", "generatedPlaylistTrackAge", "lbzUsername", "ratings", "username"]
+                "required": [
+                  "generatedPlaylist",
+                  "generatedPlaylistArtistLimit",
+                  "generatedPlaylistTrackAge",
+                  "lbzUsername",
+                  "ratings",
+                  "username"
+                ]
               }
             ]
           }
@@ -324,11 +333,12 @@
         },
         {
           "type": "HorizontalLayout",
-            "elements": [
+          "elements": [
             {
               "type": "Control",
               "scope": "#/properties/schedule"
-            },        {
+            },
+            {
               "type": "Control",
               "scope": "#/properties/fallbackCount"
             }
