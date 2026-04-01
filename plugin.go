@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"listenbrainz-daily-playlist/dispatcher"
-	"math/rand"
 	"strconv"
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/lifecycle"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
 	"github.com/navidrome/navidrome/plugins/pdk/go/scheduler"
+	"github.com/navidrome/navidrome/plugins/pdk/go/taskworker"
 )
 
 const (
@@ -21,27 +21,27 @@ const (
 type brainzPlaylistPlugin struct{}
 
 func (b *brainzPlaylistPlugin) OnCallback(req scheduler.SchedulerCallbackRequest) error {
-	switch req.Payload {
-	case dailyCron:
-		delay := rand.Int31n(3600)
-		pdk.Log(pdk.LogInfo, fmt.Sprintf("Delaying fetch by %d seconds", delay))
-		_, err := host.SchedulerScheduleOneTime(delay, fetch, fetch)
-		return err
-	case fetch:
-		return dispatcher.InitialFetch()
-	default:
-		job := dispatcher.Job{}
-		err := json.Unmarshal([]byte(req.Payload), &job)
+	return dispatcher.InitialFetch()
+}
 
-		if err != nil {
-			pdk.Log(pdk.LogError, fmt.Sprintf("Unable to parse job: %s, %v", req.Payload, err))
-			return err
-		}
+func (b *brainzPlaylistPlugin) OnTaskExecute(req taskworker.TaskExecuteRequest) (string, error) {
+	var job dispatcher.Job
+	err := json.Unmarshal(req.Payload, &job)
 
-		pdk.Log(pdk.LogTrace, "Dispatching job: "+req.Payload)
-
-		return job.Dispatch()
+	if err != nil {
+		msg := fmt.Sprintf("unable to deserialize callback to a valid job: %v\n%s", err, req.Payload)
+		pdk.Log(pdk.LogError, msg)
+		return msg, nil
 	}
+
+	pdk.Log(pdk.LogTrace, "Dispatching job: "+string(req.Payload))
+	unrecoverableError, retryError := job.Dispatch()
+
+	if unrecoverableError != "" {
+		pdk.Log(pdk.LogError, "An unrecoverable error occurred: "+unrecoverableError)
+	}
+
+	return unrecoverableError, retryError
 }
 
 func (b *brainzPlaylistPlugin) OnInit() error {
@@ -59,12 +59,19 @@ func (b *brainzPlaylistPlugin) OnInit() error {
 		return fmt.Errorf("Schedule is not a valid hour (between [0, 23], inclusive): %d", schedInt)
 	}
 
+	err = dispatcher.CreateQueue()
+	if err != nil {
+		return fmt.Errorf("Unable to create task queue: %v", err)
+	}
+
+	dispatcher.ClearQueue()
+
 	_, _, err = dispatcher.GetConfig()
 	if err != nil {
 		return err
 	}
 
-	_, err = host.SchedulerScheduleRecurring(fmt.Sprintf("0 %d * * *", schedInt), dailyCron, dailyCron)
+	_, err = host.SchedulerScheduleRecurring(fmt.Sprintf("0~59 %d * * *", schedInt), dailyCron, dailyCron)
 	if err != nil {
 		return fmt.Errorf("Failed to schedule playlist sync. Is your schedule a valid cron expression? %v", err)
 	}
@@ -87,4 +94,5 @@ func main() {}
 func init() {
 	lifecycle.Register(&brainzPlaylistPlugin{})
 	scheduler.Register(&brainzPlaylistPlugin{})
+	taskworker.Register(&brainzPlaylistPlugin{})
 }

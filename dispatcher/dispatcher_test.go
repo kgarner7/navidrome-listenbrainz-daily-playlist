@@ -4,6 +4,7 @@ package dispatcher
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"time"
 
@@ -22,8 +23,8 @@ var _ = Describe("Dispatcher", func() {
 		pdk.PDKMock.ExpectedCalls = nil
 		host.SubsonicAPIMock.Calls = nil
 		host.SubsonicAPIMock.ExpectedCalls = nil
-		host.SchedulerMock.Calls = nil
-		host.SchedulerMock.ExpectedCalls = nil
+		host.TaskMock.Calls = nil
+		host.TaskMock.ExpectedCalls = nil
 		pdk.PDKMock.On("Log", mock.Anything, mock.Anything).Maybe()
 	})
 
@@ -68,7 +69,6 @@ var _ = Describe("Dispatcher", func() {
 	})
 
 	Describe("GetConfig", func() {
-
 		DescribeTable("errors", func(path, error string) {
 			mockUserConfig(path)
 			users, fallback, err := GetConfig()
@@ -155,25 +155,6 @@ var _ = Describe("Dispatcher", func() {
 		)
 	})
 
-	Describe("GetDuration", func() {
-		It("should return 30 for a generate job", func() {
-			j := Job{JobType: GenerateJams}
-			Expect(j.GetDuration()).To(Equal(int32(30)))
-		})
-
-		It("should return 30 for an import job", func() {
-			j := Job{JobType: ImportPlaylist}
-			Expect(j.GetDuration()).To(Equal(int32(30)))
-		})
-
-		It("should return 30 * (1 + len(patch)) for patch fetch job", func() {
-			j := Job{JobType: FetchPatches, Patch: &patchJob{
-				Sources: []source{{}, {}},
-			}}
-			Expect(j.GetDuration()).To(Equal(int32(90)))
-		})
-	})
-
 	Describe("InitialFetch", func() {
 		ratings := map[int32]bool{int32(0): true, int32(2): true, int32(3): true, int32(4): true, int32(5): true}
 		now := func() *time.Time {
@@ -192,9 +173,6 @@ var _ = Describe("Dispatcher", func() {
 			var generatePayload []byte = nil
 			var importPayload []byte = nil
 			var err error
-
-			delay := int32(1)
-			var sourceDelay, generateDelay, importDelay int32
 
 			sources := []source{}
 
@@ -235,10 +213,7 @@ var _ = Describe("Dispatcher", func() {
 
 				fetchPayload, err = json.Marshal(j)
 				Expect(err).To(BeNil())
-				host.SchedulerMock.On("ScheduleOneTime", delay, string(fetchPayload), "").Return("", nil)
-
-				sourceDelay = delay
-				delay += int32(30 * (1 + len(sources)))
+				host.TaskMock.On("Enqueue", "job-queue", fetchPayload).Return("", nil)
 			}
 
 			if generated != nil {
@@ -266,10 +241,7 @@ var _ = Describe("Dispatcher", func() {
 
 				generatePayload, err = json.Marshal(j)
 				Expect(err).To(BeNil())
-				host.SchedulerMock.On("ScheduleOneTime", delay, string(generatePayload), "").Return("", nil)
-
-				generateDelay = delay
-				delay += 30
+				host.TaskMock.On("Enqueue", "job-queue", generatePayload).Return("", nil)
 			}
 
 			if imported != nil {
@@ -293,8 +265,7 @@ var _ = Describe("Dispatcher", func() {
 
 				importPayload, err = json.Marshal(j)
 				Expect(err).To(BeNil())
-				host.SchedulerMock.On("ScheduleOneTime", delay, string(importPayload), "").Return("", nil)
-				importDelay = delay
+				host.TaskMock.On("Enqueue", "job-queue", importPayload).Return("", nil)
 			}
 
 			resp := responses.JsonWrapper{
@@ -316,14 +287,14 @@ var _ = Describe("Dispatcher", func() {
 			Expect(err).To(BeNil())
 
 			if fetchPayload != nil {
-				host.SchedulerMock.AssertCalled(GinkgoT(), "ScheduleOneTime", sourceDelay, string(fetchPayload), "")
+				host.TaskMock.AssertCalled(GinkgoT(), "Enqueue", "job-queue", fetchPayload)
 			}
 
 			if generatePayload != nil {
-				host.SchedulerMock.AssertCalled(GinkgoT(), "ScheduleOneTime", generateDelay, string(generatePayload), "")
+				host.TaskMock.AssertCalled(GinkgoT(), "Enqueue", "job-queue", generatePayload)
 			}
 			if importPayload != nil {
-				host.SchedulerMock.AssertCalled(GinkgoT(), "ScheduleOneTime", importDelay, string(importPayload), "")
+				host.TaskMock.AssertCalled(GinkgoT(), "Enqueue", "job-queue", importPayload)
 			}
 
 			pdk.PDKMock.AssertCalled(GinkgoT(), "Log", pdk.LogInfo, log)
@@ -344,6 +315,21 @@ var _ = Describe("Dispatcher", func() {
 				"Missing or outdated playlists, fetching on initial sync. Missing: [User: `username`, Source: `playlist name`], Outdated: [User: `username`, Source: `1234`]",
 			),
 		)
+	})
 
+	Describe("ClearQueue", func() {
+		It("should successfully clear queue", func() {
+			host.TaskMock.On("ClearQueue", "job-queue").Return(int64(1), nil)
+			ClearQueue()
+			host.TaskMock.AssertCalled(GinkgoT(), "ClearQueue", "job-queue")
+			pdk.PDKMock.AssertCalled(GinkgoT(), "Log", pdk.LogInfo, "Removed 1 job(s) from task queue")
+		})
+
+		It("should ignore clear error but log in error", func() {
+			host.TaskMock.On("ClearQueue", "job-queue").Return(int64(0), errors.New("Error"))
+			ClearQueue()
+			host.TaskMock.AssertCalled(GinkgoT(), "ClearQueue", "job-queue")
+			pdk.PDKMock.AssertCalled(GinkgoT(), "Log", pdk.LogError, "Failed to clear task queue: Error")
+		})
 	})
 })

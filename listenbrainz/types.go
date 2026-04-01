@@ -2,7 +2,7 @@ package listenbrainz
 
 import "time"
 
-type LbzError struct {
+type lbzError struct {
 	Code  int    `json:"code"`
 	Error string `json:"error"`
 }
@@ -15,7 +15,6 @@ type lbzPlaylistResponse struct {
 	PlaylistCount int               `json:"playlist_count"`
 	Playlists     []overallPlaylist `json:"playlists,omitempty"`
 	Playlist      *LbzPlaylist      `json:"playlist,omitempty"`
-	LbzError
 }
 
 type overallPlaylist struct {

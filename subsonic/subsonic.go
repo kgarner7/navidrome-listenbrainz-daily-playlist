@@ -2,8 +2,8 @@ package subsonic
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"listenbrainz-daily-playlist/retry"
 	"net/url"
 	"strconv"
 
@@ -24,7 +24,7 @@ func NewSubsonicHandler(fallbackCount int) *SubsonicHandler {
 	}
 }
 
-func Call(endpoint, subsonicUser string, params *url.Values) (*responses.JsonWrapper, bool) {
+func Call(endpoint, subsonicUser string, params *url.Values) (*responses.JsonWrapper, *retry.Error) {
 	url := fmt.Sprintf("/rest/%s?u=%s", endpoint, subsonicUser)
 	if params != nil {
 		url += "&" + params.Encode()
@@ -33,28 +33,43 @@ func Call(endpoint, subsonicUser string, params *url.Values) (*responses.JsonWra
 	subsonicResp, err := host.SubsonicAPICall(url)
 
 	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("An error occurred %s: %v", subsonicUser, err))
-		return nil, false
+		pdk.Log(pdk.LogError, fmt.Sprintf("An unrecoverable Subsonic error occurred %s: %v", subsonicUser, err))
+		return nil, &retry.Error{
+			Error:     err,
+			Retryable: false,
+		}
 	}
 
 	var decoded responses.JsonWrapper
 	if err := json.Unmarshal([]byte(subsonicResp), &decoded); err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("A deserialization error occurred %s: %s", subsonicUser, err))
-		return nil, false
+		return nil, &retry.Error{
+			Error:     err,
+			Retryable: false,
+		}
 	}
 
 	if decoded.Subsonic.Status != "ok" {
-		pdk.Log(pdk.LogError, fmt.Sprintf("Subsonic status is not ok: (%d)%s", decoded.Subsonic.Error.Code, decoded.Subsonic.Error.Message))
-		return nil, false
+		err := fmt.Errorf("Subsonic status is not ok: (%d) %s", decoded.Subsonic.Error.Code, decoded.Subsonic.Error.Message)
+
+		pdk.Log(pdk.LogError, err.Error())
+		return nil, &retry.Error{
+			Error: err,
+			// 0 is an internal server error. This is the only error that we will consider as recoverable
+
+			Retryable: decoded.Subsonic.Error.Code == 0,
+		}
 	}
 
-	return &decoded, true
+	return &decoded, nil
 }
 
+// LookupTrack will ignore errors that occur
 func (s *SubsonicHandler) LookupTrack(
 	subsonicUser, title, mbid string,
 	artistMbids []string,
 ) *responses.Child {
+
 	trackParams := url.Values{
 		"artistCount": []string{"0"},
 		"albumCount":  []string{"0"},
@@ -62,8 +77,8 @@ func (s *SubsonicHandler) LookupTrack(
 		"query":       []string{mbid},
 	}
 
-	resp, ok := Call("search3", subsonicUser, &trackParams)
-	if !ok {
+	resp, err := Call("search3", subsonicUser, &trackParams)
+	if err != nil {
 		return nil
 	}
 
@@ -91,8 +106,8 @@ func (s *SubsonicHandler) LookupTrack(
 			"query":       []string{title},
 		}
 
-		resp, ok := Call("search3", subsonicUser, &trackParams)
-		if !ok {
+		resp, err := Call("search3", subsonicUser, &trackParams)
+		if err != nil {
 			return nil
 		}
 
@@ -140,8 +155,8 @@ func (s *SubsonicHandler) findArtistIdByMbid(
 		"query":       []string{mbid},
 	}
 
-	resp, ok := Call("search3", subsonicUser, &artistParams)
-	if !ok {
+	resp, err := Call("search3", subsonicUser, &artistParams)
+	if err != nil {
 		return ""
 	}
 
@@ -171,10 +186,10 @@ func FindExistingPlaylist(resp *responses.JsonWrapper, playlistName string) *res
 	return nil
 }
 
-func UpdatePlaylist(subsonicUser, playlistName, comment string, songIds []string) error {
-	subsonicResp, ok := Call("getPlaylists", subsonicUser, &url.Values{"username": []string{subsonicUser}})
-	if !ok {
-		return errors.New("Failed to fetch subsonic playlists for user " + subsonicUser)
+func UpdatePlaylist(subsonicUser, playlistName, comment string, songIds []string) *retry.Error {
+	subsonicResp, err := Call("getPlaylists", subsonicUser, &url.Values{"username": []string{subsonicUser}})
+	if err != nil {
+		return err
 	}
 
 	existingPlaylist := FindExistingPlaylist(subsonicResp, playlistName)
@@ -186,9 +201,9 @@ func UpdatePlaylist(subsonicUser, playlistName, comment string, songIds []string
 		createPlaylistParams.Add("name", playlistName)
 	}
 
-	subsonicResp, ok = Call("createPlaylist", subsonicUser, &createPlaylistParams)
-	if !ok {
-		return fmt.Errorf("Failed to create playlist %s", playlistName)
+	subsonicResp, err = Call("createPlaylist", subsonicUser, &createPlaylistParams)
+	if err != nil {
+		return err
 	}
 
 	if subsonicResp.Subsonic.Playlist != nil && subsonicResp.Subsonic.Playlist.Comment != comment {
@@ -197,9 +212,9 @@ func UpdatePlaylist(subsonicUser, playlistName, comment string, songIds []string
 			"comment":    []string{comment},
 		}
 
-		_, ok = Call("updatePlaylist", subsonicUser, &updatePlaylistParams)
-		if !ok {
-			return fmt.Errorf("Failed to update playlist %s for %s", playlistName, subsonicUser)
+		_, err = Call("updatePlaylist", subsonicUser, &updatePlaylistParams)
+		if err != nil {
+			return err
 		}
 	}
 
