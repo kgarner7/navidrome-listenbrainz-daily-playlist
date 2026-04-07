@@ -1,9 +1,9 @@
 {
-  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/feat/plugin-taskqueue-host-service/plugins/manifest-schema.json",
+  "$schema": "https://raw.githubusercontent.com/navidrome/navidrome/refs/heads/master/plugins/manifest-schema.json",
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
-  "version": "5.0.1",
+  "version": "5.0.2",
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
   "permissions": {
@@ -226,7 +226,10 @@
                 },
                 {
                   "type": "Control",
-                  "scope": "#/properties/lbzToken"
+                  "scope": "#/properties/lbzToken",
+                  "options": {
+                    "format": "password"
+                  }
                 },
                 {
                   "type": "Label",
