@@ -16,7 +16,7 @@ import (
 
 const (
 	lbzEndpoint = "https://api.listenbrainz.org/1"
-	userAgent   = "NavidromePlaylistImporter/4.0.3"
+	userAgent   = "NavidromePlaylistImporter/6.0.0 (https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist)"
 )
 
 func processRatelimit(resp *host.HTTPResponse) {
@@ -75,10 +75,7 @@ func processHttpResponse(resp *host.HTTPResponse, err error) *retry.Error {
 	}
 
 	if resp.StatusCode == 429 {
-		return &retry.Error{
-			Error:     errors.New("ListenBrainz rate limit hit"),
-			Retryable: true,
-		}
+		return retry.TempError(errors.New("ListenBrainz rate limit hit"))
 	}
 
 	return nil
@@ -94,12 +91,16 @@ func makeLbzGet(endpoint, token string) (*host.HTTPResponse, *retry.Error) {
 		headers["Authorization"] = "Token " + token
 	}
 
+	start := time.Now()
+
 	resp, err := host.HTTPSend(host.HTTPRequest{
 		Method:    "GET",
 		URL:       endpoint,
 		Headers:   headers,
-		TimeoutMs: 10000,
+		TimeoutMs: 20000,
 	})
+
+	pdk.Log(pdk.LogTrace, fmt.Sprintf("LBZ Get. Elapsed: %s", time.Since(start)))
 
 	retry := processHttpResponse(resp, err)
 	if retry != nil {
@@ -121,7 +122,7 @@ func GetPlaylist(id, lbzToken string) (*LbzPlaylist, *retry.Error) {
 	}
 
 	if result.Playlist == nil {
-		return nil, &retry.Error{Error: fmt.Errorf("Nothing parsed for playlist %s", id), Retryable: false}
+		return nil, retry.FatalError(fmt.Sprintf("nothing parsed for playlist %s", id))
 	}
 
 	return result.Playlist, nil
@@ -158,7 +159,7 @@ func GetRecommendations(lbzUsername, lbzToken string) (*LbzRecommendations, *ret
 	}
 
 	if len(recommendations.Payload.MBIDs) == 0 {
-		return nil, &retry.Error{Error: fmt.Errorf("No recommendations found for user %s", lbzUsername), Retryable: false}
+		return nil, retry.FatalError(fmt.Sprintf("no recommendations found for user %s", lbzUsername))
 	}
 
 	return &recommendations, nil
@@ -175,16 +176,21 @@ func LookupRecordings(mbids []string, token string) (map[string]lbzMetadataLooku
 		headers["Authorization"] = "Token " + token
 	}
 
-	payload := recLookup{RecordingMbids: mbids, Inc: "artist"}
+	payload := recLookup{RecordingMbids: mbids, Inc: "artist release"}
 	payloadBytes, _ := json.Marshal(payload)
+
+	endpoint := lbzEndpoint + "/metadata/recording"
+	start := time.Now()
 
 	resp, err := host.HTTPSend(host.HTTPRequest{
 		Method:    "POST",
-		URL:       lbzEndpoint + "/metadata/recording",
+		URL:       endpoint,
 		Headers:   headers,
-		TimeoutMs: 10000,
+		TimeoutMs: 20000,
 		Body:      payloadBytes,
 	})
+
+	pdk.Log(pdk.LogTrace, fmt.Sprintf("LBZ POST. Elapsed: %s", time.Since(start)))
 
 	retryErr := processHttpResponse(resp, err)
 	if retryErr != nil {

@@ -34,7 +34,6 @@ type Job struct {
 	LbzUsername string         `json:"lbzUsername"`
 	LbzToken    string         `json:"lbzToken"`
 	Ratings     map[int32]bool `json:"ratings"`
-	Fallback    int            `json:"fallback"`
 
 	Generate *generationJob `json:"generate,omitempty"`
 	Import   *importJob     `json:"import,omitempty"`

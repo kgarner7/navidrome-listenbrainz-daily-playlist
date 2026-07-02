@@ -3,7 +3,7 @@
   "$id": "navidrome://plugins/manifest/listenbrainz-daily-playlist",
   "name": "listenbrainz-daily-playlist",
   "author": "Kendall Garner",
-  "version": "5.0.2",
+  "version": "6.0.0",
   "description": "Import playlists from ListenBrainz",
   "website": "https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist",
   "permissions": {
@@ -11,11 +11,17 @@
       "reason": "To fetch metadata from listenBrainz",
       "requiredHosts": ["api.listenbrainz.org"]
     },
+    "library": {
+      "reason": "To access one or more libraries to match MusicBrainz tracks to Navidrome tracks"
+    },
+    "matcher": {
+      "reason": "To match MusicBrainz tracks to ND tracks"
+    },
     "scheduler": {
       "reason": "To schedule periodic daily playlist sync"
     },
     "subsonicapi": {
-      "reason": "Requires subsonic API to search for songs and create/update playlists on behalf of users"
+      "reason": "Requires subsonic API to create/update playlists on behalf of users"
     },
     "taskqueue": {
       "reason": "Uses task queue to process requests to ListenBrainz (searching for generated playlists, importing specific playlists, fetching recommendations)",

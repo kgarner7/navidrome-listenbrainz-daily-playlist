@@ -5,6 +5,9 @@ package dispatcher
 import (
 	"encoding/json"
 	"errors"
+	"listenbrainz-daily-playlist/retry"
+	"listenbrainz-daily-playlist/sleep"
+	"listenbrainz-daily-playlist/testdata"
 	"os"
 	"time"
 
@@ -17,6 +20,10 @@ import (
 )
 
 var _ = Describe("Dispatcher", func() {
+	var (
+		CONNECTION_RESET = errors.New("read tcp 8.8.8.8:60000->142.132.240.1:443: read: connection reset by peer")
+	)
+
 	BeforeEach(func() {
 		pdk.ResetMock()
 		pdk.PDKMock.Calls = nil
@@ -71,9 +78,8 @@ var _ = Describe("Dispatcher", func() {
 	Describe("GetConfig", func() {
 		DescribeTable("errors", func(path, error string) {
 			mockUserConfig(path)
-			users, fallback, err := GetConfig()
+			users, err := GetConfig()
 			Expect(users).To(BeNil())
-			Expect(fallback).To(BeZero())
 			Expect(err).To(MatchError(error))
 		},
 			Entry(
@@ -100,17 +106,16 @@ var _ = Describe("Dispatcher", func() {
 
 		It("should reject a config missing key users", func() {
 			pdk.PDKMock.On("GetConfig", "users").Return("", false)
-			users, fallback, err := GetConfig()
+			users, err := GetConfig()
 			Expect(users).To(BeNil())
-			Expect(fallback).To(BeZero())
 			Expect(err).To(MatchError("missing required 'users' configuration"))
 		})
 
 		It("return a good user config, no fallback", func() {
 			mockUserConfig("userConfig.complete")
-			pdk.PDKMock.On("GetConfig", "fallbackCount").Return("", false)
+			pdk.PDKMock.On("GetConfig").Return("", false)
 
-			users, fallback, err := GetConfig()
+			users, err := GetConfig()
 			Expect(users).To(Equal([]userConfig{
 				{
 					GeneratePlaylist:             true,
@@ -136,23 +141,8 @@ var _ = Describe("Dispatcher", func() {
 					},
 				},
 			}))
-			Expect(fallback).To(Equal(15))
 			Expect(err).To(BeNil())
 		})
-
-		DescribeTable("returns a good config, but invalid fallback values", func(count, error string) {
-			mockUserConfig("userConfig.complete")
-			pdk.PDKMock.On("GetConfig", "fallbackCount").Return(count, true)
-
-			users, fallback, err := GetConfig()
-			Expect(users).To(BeNil())
-			Expect(fallback).To(Equal(0))
-			Expect(err).To(MatchError(error))
-		},
-			Entry("non-integer", "abcd", "fallbackCount is not a valid number"),
-			Entry("zero", "0", "fallbackCount must be between 1 and 500 (inclusive)"),
-			Entry("big number", "501", "fallbackCount must be between 1 and 500 (inclusive)"),
-		)
 	})
 
 	Describe("InitialFetch", func() {
@@ -208,7 +198,6 @@ var _ = Describe("Dispatcher", func() {
 					LbzToken:    "1234",
 					Ratings:     ratings,
 					Patch:       &patchJob{Sources: sources},
-					Fallback:    15,
 				}
 
 				fetchPayload, err = json.Marshal(j)
@@ -236,7 +225,6 @@ var _ = Describe("Dispatcher", func() {
 						TrackAge:    60,
 						ArtistLimit: 15,
 					},
-					Fallback: 15,
 				}
 
 				generatePayload, err = json.Marshal(j)
@@ -260,7 +248,6 @@ var _ = Describe("Dispatcher", func() {
 					LbzToken:    "1234",
 					Ratings:     ratings,
 					Import:      &importJob{Name: "1234", LbzId: "0"},
-					Fallback:    15,
 				}
 
 				importPayload, err = json.Marshal(j)
@@ -330,6 +317,144 @@ var _ = Describe("Dispatcher", func() {
 			ClearQueue()
 			host.TaskMock.AssertCalled(GinkgoT(), "ClearQueue", "job-queue")
 			pdk.PDKMock.AssertCalled(GinkgoT(), "Log", pdk.LogError, "Failed to clear task queue: Error")
+		})
+	})
+
+	Describe("dispatching", func() {
+		const lbzEndpoint = "https://api.listenbrainz.org/1"
+		var job Job
+
+		mockSleep := func(d time.Duration) {}
+
+		BeforeEach(func() {
+			job = Job{Username: "username"}
+			oldSleep := sleep.Sleep
+			sleep.Sleep = mockSleep
+
+			pdk.ResetMock()
+			pdk.PDKMock.Calls = nil
+			pdk.PDKMock.ExpectedCalls = nil
+			host.HTTPMock.Calls = nil
+			host.HTTPMock.ExpectedCalls = nil
+
+			host.TaskMock.Calls = nil
+			host.TaskMock.ExpectedCalls = nil
+			pdk.PDKMock.On("Log", mock.Anything, mock.Anything).Maybe()
+
+			DeferCleanup(func() {
+				sleep.Sleep = oldSleep
+			})
+		})
+
+		setupResponse := func(request host.HTTPRequest, code int, dataPath string, err error, rateLimited bool) {
+			host.HTTPMock.On("Send", request).Return(testdata.MakeLbzResponse(code, dataPath+".json", err, rateLimited))
+		}
+
+		Describe("dispatchSourceFetching", func() {
+			BeforeEach(func() {
+				job.JobType = FetchPatches
+			})
+
+			It("should error if patch is missing", func() {
+				err := job.Dispatch()
+				Expect(err).To(Equal(retry.FatalError("attempting to dispatch patch fetch without patch")))
+			})
+
+			It("should fail if LBZ response is bad", func() {
+				job.LbzUsername = "a"
+				job.Patch = &patchJob{Sources: []source{{SourcePatch: "daily-jams", PlaylistName: "daily-jams"}}}
+
+				url := lbzEndpoint + "/user/a/playlists/createdfor"
+				request := testdata.MakeLbzRequest(url, "", nil)
+				setupResponse(request, 404, "createdFor.noUser", nil, false)
+				err := job.Dispatch()
+				Expect(err).To(Equal(retry.FatalError("ListenBrainz HTTP Error. Code: 404, Error: Cannot find user: a")))
+			})
+
+			It("should issue a retry if present", func() {
+				job.LbzUsername = "a"
+				job.Patch = &patchJob{Sources: []source{{SourcePatch: "daily-jams", PlaylistName: "daily-jams"}}}
+
+				url := lbzEndpoint + "/user/a/playlists/createdfor"
+				request := testdata.MakeLbzRequest(url, "", nil)
+				setupResponse(request, 0, "", CONNECTION_RESET, false)
+				err := job.Dispatch()
+				Expect(err).To(Equal(retry.TempError(CONNECTION_RESET)))
+			})
+
+			It("should error if no playlist found", func() {
+				job.LbzUsername = "test"
+				job.Patch = &patchJob{Sources: []source{{SourcePatch: "daily-jams", PlaylistName: "daily-jams"}}}
+
+				url := lbzEndpoint + "/user/test/playlists/createdfor"
+				request := testdata.MakeLbzRequest(url, "", nil)
+				setupResponse(request, 200, "createdFor.success", nil, false)
+				err := job.Dispatch()
+
+				Expect(err).ToNot(BeNil())
+				Expect(err.Retryable).To(BeFalse())
+				Expect(err.Error.Error()).To(Equal("no playlist for ListenBrainz user `test` found with algorithm/source patch `daily-jams`"))
+
+				Expect(host.TaskMock.Calls).To(BeNil())
+			})
+
+			It("should find real playlist, retry on enqueue error", func() {
+				job.LbzUsername = "test"
+				job.Patch = &patchJob{Sources: []source{{SourcePatch: "weekly-exploration", PlaylistName: "daily-jams"}}}
+
+				url := lbzEndpoint + "/user/test/playlists/createdfor"
+				request := testdata.MakeLbzRequest(url, "", nil)
+				setupResponse(request, 200, "createdFor.success", nil, false)
+
+				dispatched := Job{
+					JobType:     ImportPlaylist,
+					Username:    "username",
+					LbzUsername: "test",
+					Import: &importJob{
+						Name:  "daily-jams",
+						LbzId: "00000000-0000-0000-0000-000000000000",
+					},
+				}
+
+				dispatchPayload, marshalErr := json.Marshal(dispatched)
+				Expect(marshalErr).To(BeNil())
+				host.TaskMock.On("Enqueue", "job-queue", dispatchPayload).Return("", errors.New("nope"))
+
+				err := job.Dispatch()
+				Expect(err).To(Equal(retry.TempError(errors.New("nope"))))
+				Expect(host.TaskMock.Calls).To(HaveLen(1))
+			})
+
+			It("should find real playlist, succeed on shipping task, full job", func() {
+				job.LbzUsername = "test"
+				job.Patch = &patchJob{Sources: []source{{SourcePatch: "weekly-exploration", PlaylistName: "daily-jams"}}}
+				job.LbzToken = "1234"
+				job.Ratings = map[int32]bool{int32(5): true}
+
+				url := lbzEndpoint + "/user/test/playlists/createdfor"
+				request := testdata.MakeLbzRequest(url, "1234", nil)
+				setupResponse(request, 200, "createdFor.success", nil, false)
+
+				dispatched := Job{
+					JobType:     ImportPlaylist,
+					Username:    "username",
+					LbzUsername: "test",
+					LbzToken:    "1234",
+					Ratings:     map[int32]bool{int32(5): true},
+					Import: &importJob{
+						Name:  "daily-jams",
+						LbzId: "00000000-0000-0000-0000-000000000000",
+					},
+				}
+
+				dispatchPayload, marshalErr := json.Marshal(dispatched)
+				Expect(marshalErr).To(BeNil())
+				host.TaskMock.On("Enqueue", "job-queue", dispatchPayload).Return("", nil)
+
+				err := job.Dispatch()
+				Expect(err).To(BeNil())
+				Expect(host.TaskMock.Calls).To(HaveLen(1))
+			})
 		})
 	})
 })

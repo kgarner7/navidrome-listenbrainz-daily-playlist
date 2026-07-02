@@ -47,7 +47,9 @@ type algoMeta struct {
 }
 
 type lbTrack struct {
+	Album      string         `json:"album"`
 	Creator    string         `json:"creator"`
+	Duration   uint32         `json:"duration"`
 	Extension  trackExtension `json:"extension"`
 	Identifier []string       `json:"identifier"`
 	Title      string         `json:"title"`
@@ -66,7 +68,8 @@ type trackAdditionalMetadata struct {
 }
 
 type Artist struct {
-	MBID string `json:"artist_mbid"`
+	ArtistCreditName string `json:"artist_credit_name"`
+	MBID             string `json:"artist_mbid"`
 }
 
 type LbzRecommendations struct {
@@ -88,6 +91,7 @@ type RecordingMBID struct {
 type lbzMetadataLookup struct {
 	Artist    artistCredit      `json:"artist"`
 	Recording extendedRecording `json:"recording"`
+	Release   extendedRelease   `json:"release"`
 }
 
 type artistCredit struct {
@@ -100,9 +104,15 @@ type extendedArtist struct {
 }
 
 type extendedRecording struct {
-	Name string `json:"name"`
+	ISRCs  []string `json:"isrcs"`
+	Length uint32   `json:"length"`
+	Name   string   `json:"name"`
 }
 
+type extendedRelease struct {
+	MBID string `json:"mbid"`
+	Name string `json:"name"`
+}
 type recLookup struct {
 	RecordingMbids []string `json:"recording_mbids"`
 	Inc            string   `json:"inc"`

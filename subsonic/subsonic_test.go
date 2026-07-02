@@ -3,7 +3,6 @@
 package subsonic
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"listenbrainz-daily-playlist/retry"
@@ -82,10 +81,7 @@ var _ = Describe("", func() {
 
 			resp, err := Call("ping", user, nil)
 			Expect(resp).To(BeNil())
-			Expect(err).To(Equal(&retry.Error{
-				Error:     errors.New("fetch failed"),
-				Retryable: false,
-			}))
+			Expect(err).To(Equal(retry.FatalError("fetch failed")))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 
 			validateCalls()
@@ -107,11 +103,7 @@ var _ = Describe("", func() {
 			mockSubsonicResponse("ping", nil, "error")
 			resp, err := Call("ping", user, nil)
 			Expect(resp).To(BeNil())
-			Expect(err).To(Equal(&retry.Error{
-				Error:     fmt.Errorf("Subsonic status is not ok: (40) Wrong username or password"),
-				Retryable: false,
-			}))
-
+			Expect(err).To(Equal(retry.FatalError("subsonic status is not ok: (40) Wrong username or password")))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 			validateCalls()
 		})
@@ -121,7 +113,7 @@ var _ = Describe("", func() {
 			resp, err := Call("ping", user, nil)
 			Expect(resp).To(BeNil())
 			Expect(err).To(Equal(&retry.Error{
-				Error:     fmt.Errorf("Subsonic status is not ok: (0) Internal server error: unknown"),
+				Error:     fmt.Errorf("subsonic status is not ok: (0) Internal server error: unknown"),
 				Retryable: true,
 			}))
 
@@ -147,132 +139,6 @@ var _ = Describe("", func() {
 		})
 	})
 
-	Describe("LookupTrack", func() {
-		const (
-			mbid       = "9980309d-3480-4e7e-89ce-fce971a452be"
-			title      = "world.execute(me);"
-			artistMbid = "d2a92ee2-27ce-4e71-bfc5-12e34fe8ef56"
-		)
-
-		trackParams := url.Values{
-			"artistCount": []string{"0"},
-			"albumCount":  []string{"0"},
-			"songCount":   []string{"1"},
-			"query":       []string{mbid},
-		}
-
-		artistMbids := []string{artistMbid}
-
-		artistParams := url.Values{
-			"artistCount": []string{"1"},
-			"albumCount":  []string{"0"},
-			"songCount":   []string{"0"},
-			"query":       []string{artistMbid},
-		}
-
-		fallbackParams := url.Values{
-			"artistCount": []string{"0"},
-			"albumCount":  []string{"0"},
-			"songCount":   []string{"15"},
-			"query":       []string{title},
-		}
-
-		var s *SubsonicHandler
-
-		BeforeEach(func() {
-			s = NewSubsonicHandler(15)
-		})
-
-		It("gives up if an error occurs on fetch by mbid", func() {
-			mockSubsonicResponse("search3", &trackParams, "error")
-			track := s.LookupTrack(user, title, mbid, artistMbids)
-			Expect(track).To(BeNil())
-			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
-			validateCalls()
-		})
-
-		It("responds when track is found by mbid", func() {
-			mockSubsonicResponse("search3", &trackParams, "child")
-			track := s.LookupTrack(user, title, mbid, artistMbids)
-
-			f, _ := os.ReadFile("testdata/child.json")
-			var wrapper responses.JsonWrapper
-			_ = json.Unmarshal(f, &wrapper)
-
-			Expect(track).To(BeComparableTo(&wrapper.Subsonic.SearchResult3.Song[0]))
-			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
-			validateCalls()
-		})
-
-		It("gives up when track not found by mbid and artist not found by mbid", func() {
-			mockSubsonicResponse("search3", &trackParams, "emptySearch")
-			mockSubsonicResponse("search3", &artistParams, "emptySearch")
-
-			track := s.LookupTrack(user, title, mbid, artistMbids)
-			Expect(track).To(BeNil())
-			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(2))
-			validateCalls()
-
-			Expect(s.artistMbidToId).To(HaveKeyWithValue(artistMbid, ""))
-		})
-
-		It("gives up when track not found by mbid and artist search returns an error", func() {
-			mockSubsonicResponse("search3", &trackParams, "emptySearch")
-			mockSubsonicResponse("search3", &artistParams, "error")
-
-			track := s.LookupTrack(user, title, mbid, artistMbids)
-			Expect(track).To(BeNil())
-			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(2))
-			validateCalls()
-
-			Expect(s.artistMbidToId).To(BeEmpty())
-		})
-
-		It("looks up track by title if artist found by mbid, but still not found", func() {
-			mockSubsonicResponse("search3", &trackParams, "emptySearch")
-			mockSubsonicResponse("search3", &artistParams, "artistSearch")
-			mockSubsonicResponse("search3", &fallbackParams, "emptySearch")
-
-			track := s.LookupTrack(user, title, mbid, artistMbids)
-			Expect(track).To(BeNil())
-			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(3))
-			validateCalls()
-
-			Expect(s.artistMbidToId).To(HaveKeyWithValue(artistMbid, "2fURvRfCF5WaU1262xTQLp"))
-		})
-
-		It("looks up track by title if artist found by mbid, and last search errors", func() {
-			mockSubsonicResponse("search3", &trackParams, "emptySearch")
-			mockSubsonicResponse("search3", &artistParams, "artistSearch")
-			mockSubsonicResponse("search3", &fallbackParams, "error")
-
-			track := s.LookupTrack(user, title, mbid, artistMbids)
-			Expect(track).To(BeNil())
-			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(3))
-			validateCalls()
-
-			Expect(s.artistMbidToId).To(HaveKeyWithValue(artistMbid, "2fURvRfCF5WaU1262xTQLp"))
-		})
-
-		It("looks up track by title if artist found by mbid, and is found", func() {
-			mockSubsonicResponse("search3", &trackParams, "emptySearch")
-			mockSubsonicResponse("search3", &artistParams, "artistSearch")
-			mockSubsonicResponse("search3", &fallbackParams, "child")
-
-			track := s.LookupTrack(user, title, mbid, artistMbids)
-
-			f, _ := os.ReadFile("testdata/child.json")
-			var wrapper responses.JsonWrapper
-			_ = json.Unmarshal(f, &wrapper)
-
-			Expect(track).To(BeComparableTo(&wrapper.Subsonic.SearchResult3.Song[0]))
-			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(3))
-			validateCalls()
-
-			Expect(s.artistMbidToId).To(HaveKeyWithValue(artistMbid, "2fURvRfCF5WaU1262xTQLp"))
-		})
-	})
-
 	Describe("UpdatePlaylist", func() {
 		title := "Generated Daily Jams"
 		songIds := []string{"cd020be4e71f3f9a1856ebc89741f4d9"}
@@ -282,10 +148,7 @@ var _ = Describe("", func() {
 			mockSubsonicResponse("getPlaylists", &url.Values{"username": []string{user}}, "error")
 
 			err := UpdatePlaylist(user, title, "This is a comment", songIds)
-			Expect(err).To(Equal(&retry.Error{
-				Error:     fmt.Errorf("Subsonic status is not ok: (40) Wrong username or password"),
-				Retryable: false,
-			}))
+			Expect(err).To(Equal(retry.FatalError("subsonic status is not ok: (40) Wrong username or password")))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))
 			validateCalls()
 		})
@@ -295,10 +158,7 @@ var _ = Describe("", func() {
 			mockSubsonicResponse("createPlaylist", &url.Values{"name": []string{title}, "songId": songIds}, "error")
 
 			err := UpdatePlaylist(user, title, "This is a comment", songIds)
-			Expect(err).To(Equal(&retry.Error{
-				Error:     fmt.Errorf("Subsonic status is not ok: (40) Wrong username or password"),
-				Retryable: false,
-			}))
+			Expect(err).To(Equal(retry.FatalError("subsonic status is not ok: (40) Wrong username or password")))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(2))
 			validateCalls()
 		})
@@ -309,10 +169,7 @@ var _ = Describe("", func() {
 			mockSubsonicResponse("updatePlaylist", &url.Values{"playlistId": []string{playlistId}, "comment": []string{"this is a comment"}}, "error")
 
 			err := UpdatePlaylist(user, title, "this is a comment", songIds)
-			Expect(err).To(Equal(&retry.Error{
-				Error:     fmt.Errorf("Subsonic status is not ok: (40) Wrong username or password"),
-				Retryable: false,
-			}))
+			Expect(err).To(Equal(retry.FatalError("subsonic status is not ok: (40) Wrong username or password")))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(3))
 			validateCalls()
 		})
@@ -322,7 +179,7 @@ var _ = Describe("", func() {
 
 			err := UpdatePlaylist(user, title, "This is a comment", songIds)
 			Expect(err).To(Equal(&retry.Error{
-				Error:     fmt.Errorf("Subsonic status is not ok: (0) Internal server error: unknown"),
+				Error:     fmt.Errorf("subsonic status is not ok: (0) Internal server error: unknown"),
 				Retryable: true,
 			}))
 			Expect(host.SubsonicAPIMock.Calls).To(HaveLen(1))

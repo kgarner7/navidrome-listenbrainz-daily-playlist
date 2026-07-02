@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"listenbrainz-daily-playlist/listenbrainz"
+	"listenbrainz-daily-playlist/retry"
 	"listenbrainz-daily-playlist/subsonic"
 	"net/url"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
-	"github.com/navidrome/navidrome/server/subsonic/responses"
+	"github.com/navidrome/navidrome/plugins/pdk/go/types"
 )
 
 const (
@@ -24,7 +25,7 @@ const (
 // Dispatches a job.
 // The first return value denotes an unrecoverable error (do not retry)
 // The second return value is an error that should be reattempted
-func (j *Job) Dispatch() (string, error) {
+func (j *Job) Dispatch() *retry.Error {
 	switch j.JobType {
 	case FetchPatches:
 		return j.dispatchSourceFetching()
@@ -33,13 +34,13 @@ func (j *Job) Dispatch() (string, error) {
 	case ImportPlaylist:
 		return j.dispatchImport()
 	default:
-		return fmt.Sprintf("unexpected job %s", j.JobType), nil
+		return retry.FatalError(fmt.Sprintf("unexpected job %s", j.JobType))
 	}
 }
 
-func (j *Job) dispatchSourceFetching() (string, error) {
+func (j *Job) dispatchSourceFetching() *retry.Error {
 	if j.Patch == nil {
-		return "attempting to dispatch patch fetch without patch", nil
+		return retry.FatalError("attempting to dispatch patch fetch without patch")
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Searching ListenBrainz for generated playlists for %s", j.Username))
@@ -47,7 +48,7 @@ func (j *Job) dispatchSourceFetching() (string, error) {
 	playlists, err := listenbrainz.GetCreatedForPlaylists(j.LbzUsername, j.LbzToken)
 	if err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to fetch playlists for user %s: %v", j.Username, err.Error))
-		return err.Result()
+		return err
 	}
 
 	var ignoredError error = nil
@@ -63,7 +64,7 @@ func (j *Job) dispatchSourceFetching() (string, error) {
 		}
 
 		if playlistId == "" {
-			newErr := fmt.Errorf("No playlist for ListenBrainz user `%s` found with algorithm/source patch `%s`", j.LbzUsername, source.SourcePatch)
+			newErr := fmt.Errorf("no playlist for ListenBrainz user `%s` found with algorithm/source patch `%s`", j.LbzUsername, source.SourcePatch)
 			ignoredError = errors.Join(ignoredError, newErr)
 			pdk.Log(pdk.LogError, newErr.Error())
 			continue
@@ -75,7 +76,6 @@ func (j *Job) dispatchSourceFetching() (string, error) {
 			LbzUsername: j.LbzUsername,
 			LbzToken:    j.LbzToken,
 			Ratings:     j.Ratings,
-			Fallback:    j.Fallback,
 			Import: &importJob{
 				Name:  source.PlaylistName,
 				LbzId: playlistId,
@@ -91,20 +91,20 @@ func (j *Job) dispatchSourceFetching() (string, error) {
 
 		_, taskErr := host.TaskEnqueue(queueName, payload)
 		if taskErr != nil {
-			return "", taskErr
+			return retry.TempError(taskErr)
 		}
 	}
 
 	if ignoredError != nil {
-		return ignoredError.Error(), nil
+		return &retry.Error{Error: ignoredError, Retryable: false}
 	}
 
-	return "", nil
+	return nil
 }
 
-func (j *Job) dispatchGenerate() (string, error) {
+func (j *Job) dispatchGenerate() *retry.Error {
 	if j.Generate == nil {
-		return "attempting to call generate job without generate payload", nil
+		return retry.FatalError("attempting to call generate job without generate payload")
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Generating playlist `%s` for user %s", j.Generate.Name, j.Username))
@@ -114,7 +114,7 @@ func (j *Job) dispatchGenerate() (string, error) {
 	recommendations, err := listenbrainz.GetRecommendations(j.LbzUsername, j.LbzToken)
 	if err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to fetch recommendations for user %s: %v", j.Username, err.Error))
-		return err.Result()
+		return err
 	}
 
 	mbids := make([]string, len(recommendations.Payload.MBIDs))
@@ -125,53 +125,73 @@ func (j *Job) dispatchGenerate() (string, error) {
 	metadata, err := listenbrainz.LookupRecordings(mbids, j.LbzToken)
 	if err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to lookup %d recordings for user %s: %v", len(mbids), j.Username, err.Error))
-		return err.Result()
+		return err
 	}
 
-	allowedSongs := []*responses.Child{}
-	notPlayed := []*responses.Child{}
+	allowedSongs := []*types.Track{}
+	notPlayed := []*types.Track{}
 
-	missing := []string{}
-	excluded := []string{}
-	recentCount := 0
+	tracks := make([]types.SongRef, len(mbids))
 
-	subsonicHandler := subsonic.NewSubsonicHandler(j.Fallback)
-
-	for _, mbid := range mbids {
+	for idx, mbid := range mbids {
 		recordingMetadata, ok := metadata[mbid]
 		if !ok {
 			pdk.Log(pdk.LogWarn, fmt.Sprintf("Warning: track with mbid %s not found in metadata lookup. Skipping", mbid))
 			continue
 		}
 
-		artistMbids := make([]string, len(recordingMetadata.Artist.Artists))
-		for idx, artist := range recordingMetadata.Artist.Artists {
-			artistMbids[idx] = artist.ArtistMbid
+		tracks[idx].Album = recordingMetadata.Release.Name
+		tracks[idx].AlbumMBID = recordingMetadata.Release.MBID
+		tracks[idx].DurationMs = recordingMetadata.Recording.Length
+		tracks[idx].Name = recordingMetadata.Recording.Name
+		tracks[idx].MBID = mbid
+
+		if len(recordingMetadata.Recording.ISRCs) > 0 {
+			tracks[idx].ISRC = recordingMetadata.Recording.ISRCs[0]
 		}
 
-		song := subsonicHandler.LookupTrack(j.Username, recordingMetadata.Recording.Name, mbid, artistMbids)
-		if song == nil {
-			missing = append(missing, recordingMetadata.Recording.Name)
-			continue
-		}
+		tracks[idx].Artists = make([]types.ArtistRef, len(recordingMetadata.Artist.Artists))
 
-		if !j.Ratings[song.UserRating] {
-			excluded = append(excluded, recordingMetadata.Recording.Name)
-			continue
+		for artistIdx, artist := range recordingMetadata.Artist.Artists {
+			tracks[idx].Artists[artistIdx].Name = artist.Name
+			tracks[idx].Artists[artistIdx].MBID = artist.ArtistMbid
 		}
+	}
 
-		if song.Played == nil {
-			notPlayed = append(notPlayed, song)
-			continue
+	matches, matchErr := host.MatcherMatchSongs(tracks, host.MatchOptions{Username: j.Username})
+
+	if matchErr != nil {
+		return &retry.Error{Error: matchErr, Retryable: false}
+	}
+
+	missing := []string{}
+	excluded := []string{}
+	recentCount := 0
+
+	for idx, song := range matches {
+		if song != nil {
+			if !j.Ratings[song.Rating] {
+				excluded = append(excluded, song.Title)
+				continue
+			}
+
+			if song.PlayDate == nil {
+				notPlayed = append(notPlayed, song)
+				continue
+			}
+
+			playTime := time.Unix(*song.PlayDate, 0)
+
+			if now.Sub(playTime).Hours() < float64(j.Generate.TrackAge*24) {
+				recentCount += 1
+				pdk.Log(pdk.LogTrace, fmt.Sprintf("Excluding track `%s` for being played recently", song.Title))
+				continue
+			}
+
+			allowedSongs = append(allowedSongs, song)
+		} else {
+			missing = append(missing, tracks[idx].Name)
 		}
-
-		if now.Sub(*song.Played).Hours() < float64(j.Generate.TrackAge*24) {
-			recentCount += 1
-			pdk.Log(pdk.LogTrace, fmt.Sprintf("Excluding track `%s` for being played recently", song.Title))
-			continue
-		}
-
-		allowedSongs = append(allowedSongs, song)
 	}
 
 	if len(allowedSongs) < 50 {
@@ -183,27 +203,31 @@ func (j *Job) dispatchGenerate() (string, error) {
 
 	if j.Generate.ArtistLimit == 0 {
 		for _, song := range allowedSongs[:min(len(allowedSongs), 50)] {
-			songIds = append(songIds, song.Id)
+			songIds = append(songIds, song.ID)
 		}
 	} else {
 		artistCredits := map[string]int{}
 
 	outer:
 		for _, song := range allowedSongs {
-			for _, artist := range song.Artists {
-				count := artistCredits[artist.Id]
-				if count >= j.Generate.ArtistLimit {
-					continue outer
+			for _, artist := range song.Participants {
+				if artist.Role == "artist" {
+					count := artistCredits[artist.ID]
+					if count >= j.Generate.ArtistLimit {
+						continue outer
+					}
 				}
 			}
 
-			songIds = append(songIds, song.Id)
+			songIds = append(songIds, song.ID)
 			if len(songIds) == 50 {
 				break outer
 			}
 
-			for _, artist := range song.Artists {
-				artistCredits[artist.Id] += 1
+			for _, artist := range song.Participants {
+				if artist.Role == "artist" {
+					artistCredits[artist.ID] += 1
+				}
 			}
 		}
 	}
@@ -222,16 +246,16 @@ func (j *Job) dispatchGenerate() (string, error) {
 	err = subsonic.UpdatePlaylist(j.Username, j.Generate.Name, comment, songIds)
 	if err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to import playlist `%s` for user %s: %v", j.Generate.Name, j.Username, err.Error))
-		return err.Result()
+		return err
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully generated playlist `%s` for user %s", j.Generate.Name, j.Username))
-	return "", nil
+	return nil
 }
 
-func (j *Job) dispatchImport() (string, error) {
+func (j *Job) dispatchImport() *retry.Error {
 	if j.Import == nil {
-		return "attempting to call import job without import payload", nil
+		return retry.FatalError("attempting to call import job without import payload")
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Importing playlist `%s` (%s)", j.Import.Name, j.Import.LbzId))
@@ -239,31 +263,45 @@ func (j *Job) dispatchImport() (string, error) {
 	playlist, err := listenbrainz.GetPlaylist(j.Import.LbzId, j.LbzToken)
 	if err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Unable to import playlist %s: %v", j.Import.LbzId, err.Error))
-		return err.Result()
+		return err
+	}
+
+	tracks := make([]types.SongRef, len(playlist.Tracks))
+
+	for idx, track := range playlist.Tracks {
+		mbid := listenbrainz.GetIdentifier(track.Identifier[0])
+		tracks[idx].Album = track.Album
+		tracks[idx].DurationMs = track.Duration
+		tracks[idx].Name = track.Title
+		tracks[idx].MBID = mbid
+
+		tracks[idx].Artists = make([]types.ArtistRef, len(track.Extension.Track.AdditionalMetadata.Artists))
+
+		for artistIdx, artist := range track.Extension.Track.AdditionalMetadata.Artists {
+			tracks[idx].Artists[artistIdx].Name = artist.ArtistCreditName
+			tracks[idx].Artists[artistIdx].MBID = artist.MBID
+		}
+	}
+
+	matches, matchErr := host.MatcherMatchSongs(tracks, host.MatchOptions{Username: j.Username})
+
+	if matchErr != nil {
+		return &retry.Error{Error: matchErr, Retryable: false}
 	}
 
 	songIds := []string{}
 	missing := []string{}
 	excluded := []string{}
 
-	subsonicHandler := subsonic.NewSubsonicHandler(j.Fallback)
-
-	for _, track := range playlist.Tracks {
-		mbid := listenbrainz.GetIdentifier(track.Identifier[0])
-		artistMbids := make([]string, len(track.Extension.Track.AdditionalMetadata.Artists))
-		for idx, artist := range track.Extension.Track.AdditionalMetadata.Artists {
-			artistMbids[idx] = artist.MBID
-		}
-		song := subsonicHandler.LookupTrack(j.Username, track.Title, mbid, artistMbids)
-
+	for idx, song := range matches {
 		if song != nil {
-			if j.Ratings[song.UserRating] {
-				songIds = append(songIds, song.Id)
+			if j.Ratings[song.Rating] {
+				songIds = append(songIds, song.ID)
 			} else {
-				excluded = append(excluded, fmt.Sprintf("%s by %s", track.Title, track.Creator))
+				excluded = append(excluded, fmt.Sprintf("%s by %s", song.Title, song.Artist))
 			}
 		} else {
-			missing = append(missing, fmt.Sprintf("%s by %s", track.Title, track.Creator))
+			missing = append(missing, fmt.Sprintf("%s by %s", tracks[idx].Name, playlist.Tracks[idx].Creator))
 		}
 	}
 
@@ -271,7 +309,7 @@ func (j *Job) dispatchImport() (string, error) {
 
 	if len(songIds) == 0 {
 		pdk.Log(pdk.LogWarn, fmt.Sprintf("No matching files found for playlist %s. Refusing to create/update", name))
-		return "", nil
+		return nil
 	}
 
 	comment := fmt.Sprintf("Imported from playlist %s\nUpdated on: %s", playlist.Identifier, playlist.Date)
@@ -288,37 +326,37 @@ func (j *Job) dispatchImport() (string, error) {
 
 	if err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("Failed to import playlist `%s` for user %s: %v", name, j.Username, err.Error))
-		return err.Result()
+		return err
 	}
 
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("Successfully processed playlist `%s` for user %s", name, j.Username))
-	return "", nil
+	return nil
 }
 
-func GetConfig() ([]userConfig, int, error) {
+func GetConfig() ([]userConfig, error) {
 	users, ok := pdk.GetConfig("users")
 	if !ok {
-		return nil, 0, errors.New("missing required 'users' configuration")
+		return nil, errors.New("missing required 'users' configuration")
 	}
 
 	userMapping := []userConfig{}
 	err := json.Unmarshal([]byte(users), &userMapping)
 	if err != nil {
-		return nil, 0, fmt.Errorf("Invalid user mapping: %s. Should be a mapping of Navidrome users to ListenBrainz usernames", users)
+		return nil, fmt.Errorf("invalid user mapping: %s. Should be a mapping of Navidrome users to ListenBrainz usernames", users)
 	}
 
 	for _, user := range userMapping {
 		names := map[string]bool{}
 
 		if user.NDUsername == "" || user.LbzUsername == "" {
-			return nil, 0, errors.New("user must have a Navidrome username and ListenBrainz username")
+			return nil, errors.New("user must have a Navidrome username and ListenBrainz username")
 		}
 
 		if len(user.Sources) > 0 {
 			for _, source := range user.Sources {
 				_, existing := names[source.PlaylistName]
 				if existing {
-					return nil, 0, fmt.Errorf("duplicate playlist name found: %s", source.PlaylistName)
+					return nil, fmt.Errorf("duplicate playlist name found: %s", source.PlaylistName)
 				}
 
 				names[source.PlaylistName] = true
@@ -328,7 +366,7 @@ func GetConfig() ([]userConfig, int, error) {
 		if user.GeneratePlaylist && user.GeneratedPlaylist != "" {
 			_, existing := names[user.GeneratedPlaylist]
 			if existing {
-				return nil, 0, fmt.Errorf("duplicate playlist name found: %s", user.GeneratedPlaylist)
+				return nil, fmt.Errorf("duplicate playlist name found: %s", user.GeneratedPlaylist)
 			}
 
 			names[user.GeneratedPlaylist] = true
@@ -338,30 +376,14 @@ func GetConfig() ([]userConfig, int, error) {
 			for _, playlist := range user.Playlists {
 				_, existing := names[playlist.Name]
 				if existing {
-					return nil, 0, fmt.Errorf("duplicate playlist name found: %s", playlist.Name)
+					return nil, fmt.Errorf("duplicate playlist name found: %s", playlist.Name)
 				}
 				names[playlist.Name] = true
 			}
 		}
 	}
 
-	fallback, ok := pdk.GetConfig("fallbackCount")
-	fallbackCount := 15
-
-	if ok {
-		value, err := strconv.Atoi(fallback)
-		if err != nil {
-			return nil, 0, errors.New("fallbackCount is not a valid number")
-		}
-
-		if value < 1 || value > 500 {
-			return nil, 0, errors.New("fallbackCount must be between 1 and 500 (inclusive)")
-		}
-
-		fallbackCount = value
-	}
-
-	return userMapping, fallbackCount, nil
+	return userMapping, nil
 }
 
 func parseRatings(ratingString []string) map[int32]bool {
@@ -386,7 +408,7 @@ func parseRatings(ratingString []string) map[int32]bool {
 }
 
 func InitialFetch() error {
-	users, fallbackCount, err := GetConfig()
+	users, err := GetConfig()
 	if err != nil {
 		return err
 	}
@@ -401,7 +423,7 @@ func InitialFetch() error {
 	for _, user := range users {
 		playlistResp, err := subsonic.Call("getPlaylists", user.NDUsername, &url.Values{"username": []string{user.NDUsername}})
 		if err != nil {
-			return errors.New("Failed to fetch playlists on initial fetch")
+			return errors.New("failed to fetch playlists on initial fetch")
 		}
 
 		fetchedSources := []source{}
@@ -431,7 +453,6 @@ func InitialFetch() error {
 				LbzUsername: user.LbzUsername,
 				LbzToken:    user.LbzToken,
 				Ratings:     rating,
-				Fallback:    fallbackCount,
 				Patch: &patchJob{
 					Sources: fetchedSources,
 				},
@@ -457,7 +478,6 @@ func InitialFetch() error {
 					LbzUsername: user.LbzUsername,
 					LbzToken:    user.LbzToken,
 					Ratings:     rating,
-					Fallback:    fallbackCount,
 					Generate: &generationJob{
 						Name:        user.GeneratedPlaylist,
 						ArtistLimit: user.GeneratedPlaylistArtistLimit,
@@ -487,7 +507,6 @@ func InitialFetch() error {
 						LbzUsername: user.LbzUsername,
 						LbzToken:    user.LbzToken,
 						Ratings:     rating,
-						Fallback:    fallbackCount,
 						Import: &importJob{
 							Name:  item.Name,
 							LbzId: item.LbzId,

@@ -35,13 +35,20 @@ func (b *brainzPlaylistPlugin) OnTaskExecute(req taskworker.TaskExecuteRequest) 
 	}
 
 	pdk.Log(pdk.LogTrace, "Dispatching job: "+string(req.Payload))
-	unrecoverableError, retryError := job.Dispatch()
+	result := job.Dispatch()
 
-	if unrecoverableError != "" {
-		pdk.Log(pdk.LogError, "An unrecoverable error occurred: "+unrecoverableError)
+	if result != nil {
+		if result.Retryable {
+			return "", result.Error
+		}
+
+		msg := result.Error.Error()
+		pdk.Log(pdk.LogError, "An unrecoverable error occurred: "+msg)
+
+		return result.Error.Error(), nil
 	}
 
-	return unrecoverableError, retryError
+	return "", nil
 }
 
 func (b *brainzPlaylistPlugin) OnInit() error {
@@ -52,28 +59,28 @@ func (b *brainzPlaylistPlugin) OnInit() error {
 
 	schedInt, err := strconv.Atoi(schedule)
 	if err != nil {
-		return fmt.Errorf("Invalid schedule %s: %v", schedule, err)
+		return fmt.Errorf("invalid schedule %s: %v", schedule, err)
 	}
 
 	if schedInt < 0 || schedInt > 23 {
-		return fmt.Errorf("Schedule is not a valid hour (between [0, 23], inclusive): %d", schedInt)
+		return fmt.Errorf("schedule is not a valid hour (between [0, 23], inclusive): %d", schedInt)
 	}
 
 	err = dispatcher.CreateQueue()
 	if err != nil {
-		return fmt.Errorf("Unable to create task queue: %v", err)
+		return fmt.Errorf("unable to create task queue: %v", err)
 	}
 
 	dispatcher.ClearQueue()
 
-	_, _, err = dispatcher.GetConfig()
+	_, err = dispatcher.GetConfig()
 	if err != nil {
 		return err
 	}
 
 	_, err = host.SchedulerScheduleRecurring(fmt.Sprintf("0~59 %d * * *", schedInt), dailyCron, dailyCron)
 	if err != nil {
-		return fmt.Errorf("Failed to schedule playlist sync. Is your schedule a valid cron expression? %v", err)
+		return fmt.Errorf("failed to schedule playlist sync. Is your schedule a valid cron expression? %v", err)
 	}
 
 	checkOnStartup, ok := pdk.GetConfig("checkOnStartup")
@@ -85,7 +92,6 @@ func (b *brainzPlaylistPlugin) OnInit() error {
 		}
 	}
 
-	pdk.Log(pdk.LogInfo, "init success")
 	return nil
 }
 
