@@ -565,7 +565,7 @@ var _ = Describe("Dispatcher", func() {
 				host.MatcherMock.On("MatchSongs", MULTIPLE_SONG_MATCH, host.MatchOptions{Username: "username"}).Return(requestedTracks, nil)
 
 				if len(expected) > 0 {
-					comment := "Imported from playlist https://listenbrainz.org/playlist/00000000-0000-0000-0000-000000000000\nUpdated on: 0001-01-01 00:00:00 +0000 +0000"
+					comment := "Imported from playlist https://listenbrainz.org/playlist/00000000-0000-0000-0000-000000000000\nUpdated on: 0001-01-01T00:00:00Z"
 
 					missing := []string{}
 					for idx, track := range tracks {

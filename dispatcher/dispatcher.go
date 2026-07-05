@@ -312,7 +312,7 @@ func (j *Job) dispatchImport() *retry.Error {
 		return nil
 	}
 
-	comment := fmt.Sprintf("Imported from playlist %s\nUpdated on: %s", playlist.Identifier, playlist.Date)
+	comment := fmt.Sprintf("Imported from playlist %s\nUpdated on: %s", playlist.Identifier, playlist.Date.Format(time.RFC3339))
 
 	if len(missing) > 0 {
 		comment += "\nTracks not matched " + strings.Join(missing, ", ")
