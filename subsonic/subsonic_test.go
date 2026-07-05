@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"listenbrainz-daily-playlist/retry"
+	"listenbrainz-daily-playlist/testdata"
 	"net/url"
-	"os"
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
@@ -64,15 +64,7 @@ var _ = Describe("", func() {
 	}
 
 	mockSubsonicResponse := func(url string, values *url.Values, path string) {
-		url += "?u=" + user
-		f, err := os.ReadFile("testdata/" + path + ".json")
-		if err != nil {
-			panic(err)
-		}
-		if values != nil {
-			url += "&" + values.Encode()
-		}
-		host.SubsonicAPIMock.On("Call", "/rest/"+url).Return(string(f), nil)
+		testdata.MockSubsonicResponse(user, url, values, path)
 	}
 
 	Describe("MakeSubsonicRequest", func() {

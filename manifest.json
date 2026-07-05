@@ -199,17 +199,9 @@
           "type": "boolean",
           "title": "Check for out of date playlists on plugin start",
           "default": true
-        },
-        "fallbackCount": {
-          "type": "integer",
-          "title": "Fallback search count",
-          "description": "Normally, this plugin tries to match tracks by MusicBrainz ID. When that fails, this count specifies the number of tracks to try to match by artist/title",
-          "default": 15,
-          "minimum": 1,
-          "maximum": 500
         }
       },
-      "required": ["fallbackCount", "schedule", "users"]
+      "required": ["schedule", "users"]
     },
     "uiSchema": {
       "type": "VerticalLayout",
@@ -346,10 +338,6 @@
             {
               "type": "Control",
               "scope": "#/properties/schedule"
-            },
-            {
-              "type": "Control",
-              "scope": "#/properties/fallbackCount"
             }
           ]
         },

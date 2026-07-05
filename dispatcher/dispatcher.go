@@ -315,11 +315,11 @@ func (j *Job) dispatchImport() *retry.Error {
 	comment := fmt.Sprintf("Imported from playlist %s\nUpdated on: %s", playlist.Identifier, playlist.Date)
 
 	if len(missing) > 0 {
-		comment += fmt.Sprintf("\nTracks not matched by track MBID or track name + artist MBIDs: %s", strings.Join(missing, ", "))
+		comment += "\nTracks not matched " + strings.Join(missing, ", ")
 	}
 
 	if len(excluded) > 0 {
-		comment += fmt.Sprintf("\nTracks excluded by rating rule: %s", strings.Join(excluded, ", "))
+		comment += "\nTracks excluded by rating rule: " + strings.Join(excluded, ", ")
 	}
 
 	err = subsonic.UpdatePlaylist(j.Username, name, comment, songIds)

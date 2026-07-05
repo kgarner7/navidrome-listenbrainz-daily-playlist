@@ -3,6 +3,7 @@
 package listenbrainz
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ var _ = Describe("ListenBrainz endpoints", func() {
 
 	var (
 		CONNECTION_RESET = errors.New("read tcp 8.8.8.8:60000->142.132.240.1:443: read: connection reset by peer")
+		CONTEXT_DEADLINE = errors.New("Get \"https://api.listenbrainz.org/1/user/user/playlists/createdfor\": " + context.DeadlineExceeded.Error())
 	)
 
 	var sleepDuration *time.Duration
@@ -119,6 +121,11 @@ var _ = Describe("ListenBrainz endpoints", func() {
 				nil, retry.TempError(CONNECTION_RESET),
 			),
 			Entry(
+				"Retries on context deadline error", "1234", "",
+				0, "", CONTEXT_DEADLINE, false,
+				nil, retry.TempError(CONTEXT_DEADLINE),
+			),
+			Entry(
 				"Does not retry on some other arbitrary http error", "1234", "",
 				0, "", errors.New("fake error"), false,
 				nil, retry.FatalError("fake error"),
@@ -192,6 +199,11 @@ var _ = Describe("ListenBrainz endpoints", func() {
 				nil, retry.TempError(CONNECTION_RESET),
 			),
 			Entry(
+				"Retries on context deadline exceeded", "1234", "",
+				0, "", CONTEXT_DEADLINE, false,
+				nil, retry.TempError(CONTEXT_DEADLINE),
+			),
+			Entry(
 				"Does not retry on some other arbitrary http error", "1234", "",
 				0, "", errors.New("fake error"), false,
 				nil, retry.FatalError("fake error"),
@@ -248,6 +260,11 @@ var _ = Describe("ListenBrainz endpoints", func() {
 				"Retries on connection reset error", "1234", "",
 				0, "", CONNECTION_RESET, false,
 				nil, retry.TempError(CONNECTION_RESET),
+			),
+			Entry(
+				"Retries on context deadline hit", "1234", "",
+				0, "", CONTEXT_DEADLINE, false,
+				nil, retry.TempError(CONTEXT_DEADLINE),
 			),
 			Entry(
 				"Does not retry on some other arbitrary http error", "1234", "",
@@ -315,6 +332,11 @@ var _ = Describe("ListenBrainz endpoints", func() {
 				"Retries on connection reset error", []string{"1"}, "",
 				0, "", CONNECTION_RESET, false,
 				nil, retry.TempError(CONNECTION_RESET),
+			),
+			Entry(
+				"Retries on context deadline hit", []string{"1"}, "",
+				0, "", CONTEXT_DEADLINE, false,
+				nil, retry.TempError(CONTEXT_DEADLINE),
 			),
 			Entry(
 				"Does not retry on some other arbitrary http error", []string{"1"}, "",

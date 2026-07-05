@@ -1,6 +1,7 @@
 package listenbrainz
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,7 +50,8 @@ func processRatelimit(resp *host.HTTPResponse) {
 
 func processHttpResponse(resp *host.HTTPResponse, err error) *retry.Error {
 	if err != nil {
-		retryable := strings.HasSuffix(err.Error(), ": connection reset by peer")
+		message := err.Error()
+		retryable := strings.Contains(message, context.DeadlineExceeded.Error()) || strings.HasSuffix(message, ": connection reset by peer")
 
 		return &retry.Error{
 			Error:     err,
