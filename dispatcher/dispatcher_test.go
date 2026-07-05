@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"listenbrainz-daily-playlist/retry"
 	"listenbrainz-daily-playlist/sleep"
+	"listenbrainz-daily-playlist/subsonic"
 	"listenbrainz-daily-playlist/testdata"
 	"maps"
 	"net/url"
@@ -19,7 +20,6 @@ import (
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
 	"github.com/navidrome/navidrome/plugins/pdk/go/types"
-	"github.com/navidrome/navidrome/server/subsonic/responses"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
@@ -165,7 +165,7 @@ var _ = Describe("Dispatcher", func() {
 			pdk.PDKMock.On("GetConfig", "fallbackCount").Return("", false)
 
 			now := time.Now()
-			playlists := []responses.Playlist{}
+			playlists := []subsonic.Playlist{}
 
 			var fetchPayload []byte = nil
 			var generatePayload []byte = nil
@@ -175,7 +175,7 @@ var _ = Describe("Dispatcher", func() {
 			sources := []source{}
 
 			if daily != nil {
-				playlists = append(playlists, responses.Playlist{
+				playlists = append(playlists, subsonic.Playlist{
 					Id:      "12",
 					Name:    "playlist name",
 					Changed: *daily,
@@ -187,7 +187,7 @@ var _ = Describe("Dispatcher", func() {
 			}
 
 			if weekly != nil {
-				playlists = append(playlists, responses.Playlist{
+				playlists = append(playlists, subsonic.Playlist{
 					Id:      "34",
 					Name:    "weekly name",
 					Changed: *weekly,
@@ -214,7 +214,7 @@ var _ = Describe("Dispatcher", func() {
 			}
 
 			if generated != nil {
-				playlists = append(playlists, responses.Playlist{
+				playlists = append(playlists, subsonic.Playlist{
 					Id:      "56",
 					Name:    "Generated Daily Jams",
 					Changed: *generated,
@@ -241,7 +241,7 @@ var _ = Describe("Dispatcher", func() {
 			}
 
 			if imported != nil {
-				playlists = append(playlists, responses.Playlist{
+				playlists = append(playlists, subsonic.Playlist{
 					Id:      "56",
 					Name:    "1234",
 					Changed: *imported,
@@ -263,14 +263,10 @@ var _ = Describe("Dispatcher", func() {
 				host.TaskMock.On("Enqueue", "job-queue", importPayload).Return("", nil)
 			}
 
-			resp := responses.JsonWrapper{
-				Subsonic: responses.Subsonic{
-					Status:        "ok",
-					Version:       "1.16.1",
-					Type:          "navidrome",
-					ServerVersion: "0.60.3",
-					OpenSubsonic:  true,
-					Playlists:     &responses.Playlists{Playlist: playlists},
+			resp := subsonic.JsonWrapper{
+				Subsonic: subsonic.Subsonic{
+					Status:    "ok",
+					Playlists: &subsonic.Playlists{Playlist: playlists},
 				},
 			}
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
-	"github.com/navidrome/navidrome/server/subsonic/responses"
 )
 
 type SubsonicHandler struct {
@@ -23,7 +22,7 @@ func NewSubsonicHandler(fallbackCount int) *SubsonicHandler {
 	}
 }
 
-func Call(endpoint, subsonicUser string, params *url.Values) (*responses.JsonWrapper, *retry.Error) {
+func Call(endpoint, subsonicUser string, params *url.Values) (*JsonWrapper, *retry.Error) {
 	url := fmt.Sprintf("/rest/%s?u=%s", endpoint, subsonicUser)
 	if params != nil {
 		url += "&" + params.Encode()
@@ -39,7 +38,7 @@ func Call(endpoint, subsonicUser string, params *url.Values) (*responses.JsonWra
 		}
 	}
 
-	var decoded responses.JsonWrapper
+	var decoded JsonWrapper
 	if err := json.Unmarshal([]byte(subsonicResp), &decoded); err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("A deserialization error occurred %s: %s", subsonicUser, err))
 		return nil, &retry.Error{
@@ -62,7 +61,7 @@ func Call(endpoint, subsonicUser string, params *url.Values) (*responses.JsonWra
 	return &decoded, nil
 }
 
-func FindExistingPlaylist(resp *responses.JsonWrapper, playlistName string) *responses.Playlist {
+func FindExistingPlaylist(resp *JsonWrapper, playlistName string) *Playlist {
 	if len(resp.Subsonic.Playlists.Playlist) > 0 {
 		for _, playlist := range resp.Subsonic.Playlists.Playlist {
 			if playlist.Name == playlistName {

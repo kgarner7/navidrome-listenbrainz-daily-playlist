@@ -6,7 +6,7 @@ This repository contains a plugin for fetching daily playlists from [ListenBrain
 1. Your library should have MBIDs for your tracks (or at least, most of them). This plugin does song lookups _only_ using MBID. For better fallback, having artist MBIDs will also help.
 2. A ListenBrainz account per user you wish to fetch
 3. If you want daily playlists (`daily-jams`), you should follow the [`troi-bot`](https://listenbrainz.org/user/troi-bot/) user
-4. Navidrome >= 0.61.0. This reworked the plugin API. When upgrading to this version, you will need to install a new plugin. For older versions of Navidrome, see https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist/releases/tag/v2.0.4 or https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist/releases/tag/v4.0.3
+4. Navidrome >= 0.63.0. This reworked the plugin API. When upgrading to this version, you will need to install a new plugin. For older versions of Navidrome, see [v5.0.](https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist/releases/tag/v5.0.2) (minimum version 0.61.0), or [older releases](https://github.com/kgarner7/navidrome-listenbrainz-daily-playlist/releases)
 
 ## Install instructions
 
@@ -80,7 +80,6 @@ This requires configuring one or more users, and specifying which playlists to u
         - `Playlist name to be imported`: the name of the playlist that will be created within Navidrome.
     - `Include tracks with this rating.`: if you only want to import tracks with certain ratings, uncheck one or more boxes
 - `Hour to fetch playlists (24-hour format)`: the hour (24-hour moment) to fetch/generate all playlists. This is then delayed by a random interval up to an hour
-- `Fallback search count`: If a match isn't found by track name, how many tracks to search by until giving up. Between 1 and 500, inclusive
 - `Check for out of date playlists on plugin start`: If Navidrome or the plugin is restarted, check if any playlists are out of date (at least three hours old).
 
 ![Image showing a full configuration. There is one user: ND username <redacted>; LBZ username lbz-username LBZ token uuidv4 of all zeros; generate playlist is true with name "Generated Daily Jams", excluding tracks played in the last 60 days, and allowing at most 2 tracks per artist. Two playlists are set to be imported, one is expanded with source "daily-jams" and name "ListenBrainz Daily Jams", and the other "weekly-jams" is not expanded. One playlist is to be imported by playlist ID, with a token UUID of all 0s. All ratings except 1 are selected, and the playlists are scheduled to be fetched around 7:00 AM, with a fallback search of 15 tracks. Plugin will check for out of date playlists on start](./assets/full_config.png)

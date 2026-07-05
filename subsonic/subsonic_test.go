@@ -11,7 +11,6 @@ import (
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
-	"github.com/navidrome/navidrome/server/subsonic/responses"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
@@ -116,13 +115,9 @@ var _ = Describe("", func() {
 		It("handles successful request", func() {
 			mockSubsonicResponse("ping", nil, "ping.success")
 			resp, err := Call("ping", user, nil)
-			Expect(resp).To(BeComparableTo(&responses.JsonWrapper{
-				Subsonic: responses.Subsonic{
-					Status:        "ok",
-					Version:       "1.16.1",
-					Type:          "navidrome",
-					ServerVersion: "0.60.3",
-					OpenSubsonic:  true,
+			Expect(resp).To(BeComparableTo(&JsonWrapper{
+				Subsonic: Subsonic{
+					Status: "ok",
 				},
 			}))
 			Expect(err).To(BeNil())
