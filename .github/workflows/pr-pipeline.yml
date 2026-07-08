@@ -14,8 +14,8 @@ jobs:
 
       - name: Install tinygo and dependencies
         run: |
-          wget https://github.com/tinygo-org/tinygo/releases/download/v0.40.1/tinygo_0.40.1_amd64.deb
-          sudo dpkg -i tinygo_0.40.1_amd64.deb
+          wget https://github.com/tinygo-org/tinygo/releases/download/v0.41.1/tinygo_0.41.1_amd64.deb
+          sudo dpkg -i tinygo_0.41.1_amd64.deb
           sudo apt install -y binaryen
 
       - name: Download dependencies

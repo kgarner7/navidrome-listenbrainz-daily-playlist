@@ -3,12 +3,13 @@
 package listenbrainz
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"listenbrainz-daily-playlist/retry"
 	"listenbrainz-daily-playlist/sleep"
-	"os"
+	"listenbrainz-daily-playlist/testdata"
 	"time"
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
@@ -20,58 +21,18 @@ import (
 
 var _ = Describe("ListenBrainz endpoints", func() {
 	const (
-		CONNECTION_RESET = "read tcp 8.8.8.8:60000->142.132.240.1:443: read: connection reset by peer"
-		EMPTY_UUID       = "00000000-0000-0000-0000-000000000000"
+		EMPTY_UUID = "00000000-0000-0000-0000-000000000000"
+	)
+
+	var (
+		CONNECTION_RESET = errors.New("read tcp 8.8.8.8:60000->142.132.240.1:443: read: connection reset by peer")
+		CONTEXT_DEADLINE = errors.New("Get \"https://api.listenbrainz.org/1/user/user/playlists/createdfor\": " + context.DeadlineExceeded.Error())
 	)
 
 	var sleepDuration *time.Duration
 
 	mockSleep := func(d time.Duration) {
 		sleepDuration = &d
-	}
-
-	makeRequest := func(url, token string, body []byte) host.HTTPRequest {
-		headers := map[string]string{
-			"Accept":     "application/json",
-			"User-Agent": "NavidromePlaylistImporter/4.0.3",
-		}
-
-		if token != "" {
-			headers["Authorization"] = "Token " + token
-		}
-
-		request := host.HTTPRequest{
-			URL:       url,
-			Headers:   headers,
-			TimeoutMs: 10000,
-		}
-
-		if body == nil {
-			request.Method = "GET"
-		} else {
-			request.Method = "POST"
-			request.Body = body
-			request.Headers["Content-Type"] = "application/json"
-		}
-
-		return request
-	}
-
-	createResponse := func(code int, path string, err error, rateLimited bool) (*host.HTTPResponse, error) {
-		if err != nil {
-			return nil, err
-		}
-		f, err := os.ReadFile("testdata/" + path + ".json")
-		Expect(err).To(BeNil())
-
-		resp := host.HTTPResponse{StatusCode: int32(code), Body: f}
-		if rateLimited {
-			resp.Headers = map[string]string{"x-ratelimit-remaining": "1", "x-ratelimit-reset-in": "5"}
-		} else {
-			resp.Headers = map[string]string{"x-ratelimit-remaining": "29", "x-ratelimit-reset-in": "10"}
-		}
-
-		return &resp, nil
 	}
 
 	BeforeEach(func() {
@@ -92,11 +53,7 @@ var _ = Describe("ListenBrainz endpoints", func() {
 	})
 
 	setupResponse := func(request host.HTTPRequest, code int, dataPath string, err error, rateLimited bool) {
-		host.HTTPMock.On("Send", request).Return(createResponse(code, dataPath, err, rateLimited))
-	}
-
-	makeErr := func(message string, retryable bool) *retry.Error {
-		return &retry.Error{Error: errors.New(message), Retryable: retryable}
+		host.HTTPMock.On("Send", request).Return(testdata.MakeLbzResponse(code, dataPath+".json", err, rateLimited))
 	}
 
 	validateResponse := func(expected, output any, expectedErr *retry.Error, actualErr *retry.Error, rateLimited bool) {
@@ -131,26 +88,6 @@ var _ = Describe("ListenBrainz endpoints", func() {
 	}
 
 	Describe("GetPlaylist", func() {
-		createTrack := func(title string, artist string, mbid string, artistMbids []string) lbTrack {
-			artists := make([]Artist, len(artistMbids))
-			for idx, artist := range artistMbids {
-				artists[idx].MBID = artist
-			}
-
-			return lbTrack{
-				Creator: artist,
-				Extension: trackExtension{
-					Track: trackExtensionTrack{
-						AdditionalMetadata: trackAdditionalMetadata{
-							Artists: artists,
-						},
-					},
-				},
-				Identifier: []string{"https://musicbrainz.org/recording/" + mbid},
-				Title:      title,
-			}
-		}
-
 		DescribeTable("requests",
 			func(
 				id string, token string,
@@ -158,7 +95,7 @@ var _ = Describe("ListenBrainz endpoints", func() {
 				expectedPlaylist *LbzPlaylist, expectedErr *retry.Error,
 			) {
 				url := lbzEndpoint + "/playlist/" + id
-				request := makeRequest(url, token, nil)
+				request := testdata.MakeLbzRequest(url, token, nil)
 				setupResponse(request, code, dataPath, err, rateLimited)
 				actualPlaylist, actualErr := GetPlaylist(id, token)
 				validateResponse(expectedPlaylist, actualPlaylist, expectedErr, actualErr, rateLimited)
@@ -166,32 +103,37 @@ var _ = Describe("ListenBrainz endpoints", func() {
 			Entry(
 				"Handle bad playlist id", "1234", "",
 				400, "getPlaylist.error", nil, false,
-				nil, makeErr("ListenBrainz HTTP Error. Code: 400, Error: Provided playlist ID is invalid.", false),
+				nil, retry.FatalError("ListenBrainz HTTP Error. Code: 400, Error: Provided playlist ID is invalid."),
 			),
 			Entry(
 				"Handle bad token error", "1234", "1234",
 				401, "invalidToken", nil, false,
-				nil, makeErr("ListenBrainz HTTP Error. Code: 401, Error: Invalid authorization token.", false),
+				nil, retry.FatalError("ListenBrainz HTTP Error. Code: 401, Error: Invalid authorization token."),
 			),
 			Entry(
 				"Handle malformed json", "1234", "",
 				200, "malformed", nil, false,
-				nil, makeErr("unexpected end of JSON input", false),
+				nil, retry.FatalError("unexpected end of JSON input"),
 			),
 			Entry(
 				"Retries on connection reset error", "1234", "",
-				0, "", errors.New(CONNECTION_RESET), false,
-				nil, makeErr(CONNECTION_RESET, true),
+				0, "", CONNECTION_RESET, false,
+				nil, retry.TempError(CONNECTION_RESET),
+			),
+			Entry(
+				"Retries on context deadline error", "1234", "",
+				0, "", CONTEXT_DEADLINE, false,
+				nil, retry.TempError(CONTEXT_DEADLINE),
 			),
 			Entry(
 				"Does not retry on some other arbitrary http error", "1234", "",
 				0, "", errors.New("fake error"), false,
-				nil, makeErr("fake error", false),
+				nil, retry.FatalError("fake error"),
 			),
 			Entry(
 				"Error and rate limiter", "1234",
 				"", 400, "getPlaylist.error", nil, true,
-				nil, makeErr("ListenBrainz HTTP Error. Code: 400, Error: Provided playlist ID is invalid.", false),
+				nil, retry.FatalError("ListenBrainz HTTP Error. Code: 400, Error: Provided playlist ID is invalid."),
 			),
 			Entry(
 				"Handle a real (private) playlist",
@@ -201,7 +143,25 @@ var _ = Describe("ListenBrainz endpoints", func() {
 					Creator:    "test",
 					Identifier: "https://listenbrainz.org/playlist/00000000-0000-0000-0000-000000000000",
 					Tracks: []lbTrack{
-						createTrack("world.execute(me);", "Mili", "9980309d-3480-4e7e-89ce-fce971a452be", []string{"d2a92ee2-27ce-4e71-bfc5-12e34fe8ef56"}),
+						{
+							Album:    "Miracle Milk",
+							Creator:  "Mili",
+							Duration: 211912,
+							Extension: trackExtension{
+								Track: trackExtensionTrack{
+									AdditionalMetadata: trackAdditionalMetadata{
+										Artists: []Artist{
+											{
+												ArtistCreditName: "Mili",
+												MBID:             "d2a92ee2-27ce-4e71-bfc5-12e34fe8ef56",
+											},
+										},
+									},
+								},
+							},
+							Identifier: []string{"https://musicbrainz.org/recording/9980309d-3480-4e7e-89ce-fce971a452be"},
+							Title:      "world.execute(me);",
+						},
 					},
 					Title: "test",
 				}, nil,
@@ -218,7 +178,7 @@ var _ = Describe("ListenBrainz endpoints", func() {
 			) {
 
 				url := fmt.Sprintf("%s/user/%s/playlists/createdfor", lbzEndpoint, user)
-				request := makeRequest(url, token, nil)
+				request := testdata.MakeLbzRequest(url, token, nil)
 				setupResponse(request, code, dataPath, err, rateLimited)
 				actualPlaylists, actualErr := GetCreatedForPlaylists(user, token)
 				validateResponse(expectedPlaylists, actualPlaylists, expectedErr, actualErr, rateLimited)
@@ -226,22 +186,27 @@ var _ = Describe("ListenBrainz endpoints", func() {
 			Entry(
 				"Request with error", "a", "",
 				404, "createdFor.noUser", nil, false,
-				nil, makeErr("ListenBrainz HTTP Error. Code: 404, Error: Cannot find user: a", false),
+				nil, retry.FatalError("ListenBrainz HTTP Error. Code: 404, Error: Cannot find user: a"),
 			),
 			Entry(
 				"Handle malformed json with rate limit", "a", "",
 				200, "malformed", nil, false,
-				nil, makeErr("unexpected end of JSON input", false),
+				nil, retry.FatalError("unexpected end of JSON input"),
 			),
 			Entry(
 				"Retries on connection reset error", "1234", "",
-				0, "", errors.New(CONNECTION_RESET), false,
-				nil, makeErr(CONNECTION_RESET, true),
+				0, "", CONNECTION_RESET, false,
+				nil, retry.TempError(CONNECTION_RESET),
+			),
+			Entry(
+				"Retries on context deadline exceeded", "1234", "",
+				0, "", CONTEXT_DEADLINE, false,
+				nil, retry.TempError(CONTEXT_DEADLINE),
 			),
 			Entry(
 				"Does not retry on some other arbitrary http error", "1234", "",
 				0, "", errors.New("fake error"), false,
-				nil, makeErr("fake error", false),
+				nil, retry.FatalError("fake error"),
 			),
 			Entry(
 				"Successfully fetch playlists", "test", EMPTY_UUID,
@@ -276,7 +241,7 @@ var _ = Describe("ListenBrainz endpoints", func() {
 				expectedRecommendations *LbzRecommendations, expectedErr *retry.Error,
 			) {
 				url := fmt.Sprintf("%s/cf/recommendation/user/%s/recording?count=1000", lbzEndpoint, user)
-				request := makeRequest(url, token, nil)
+				request := testdata.MakeLbzRequest(url, token, nil)
 				setupResponse(request, code, dataPath, err, rateLimited)
 				actualRecommendations, actualErr := GetRecommendations(user, token)
 				validateResponse(expectedRecommendations, actualRecommendations, expectedErr, actualErr, rateLimited)
@@ -284,22 +249,27 @@ var _ = Describe("ListenBrainz endpoints", func() {
 			Entry(
 				"Request with error", "a", "",
 				404, "getRecommendations.error", nil, false,
-				nil, makeErr("ListenBrainz HTTP Error. Code: 404, Error: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.", false),
+				nil, retry.FatalError("ListenBrainz HTTP Error. Code: 404, Error: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again."),
 			),
 			Entry(
 				"Handle malformed json with rateLimit", "a", "",
 				200, "malformed", nil, true,
-				nil, makeErr("unexpected end of JSON input", false),
+				nil, retry.FatalError("unexpected end of JSON input"),
 			),
 			Entry(
 				"Retries on connection reset error", "1234", "",
-				0, "", errors.New(CONNECTION_RESET), false,
-				nil, makeErr(CONNECTION_RESET, true),
+				0, "", CONNECTION_RESET, false,
+				nil, retry.TempError(CONNECTION_RESET),
+			),
+			Entry(
+				"Retries on context deadline hit", "1234", "",
+				0, "", CONTEXT_DEADLINE, false,
+				nil, retry.TempError(CONTEXT_DEADLINE),
 			),
 			Entry(
 				"Does not retry on some other arbitrary http error", "1234", "",
 				0, "", errors.New("fake error"), false,
-				nil, makeErr("fake error", false),
+				nil, retry.FatalError("fake error"),
 			),
 			Entry(
 				"Handle valid response", "test", EMPTY_UUID,
@@ -311,20 +281,17 @@ var _ = Describe("ListenBrainz endpoints", func() {
 			Entry(
 				"Handle empty", "test", EMPTY_UUID,
 				200, "getRecommendations.emptyCount", nil, false,
-				nil, makeErr("No recommendations found for user test", false),
+				nil, retry.FatalError("no recommendations found for user test"),
 			),
 		)
 
 		It("handles a bad lookup error", func() {
 			url := lbzEndpoint + "/cf/recommendation/user/a/recording?count=1000"
-			request := makeRequest(url, "", nil)
+			request := testdata.MakeLbzRequest(url, "", nil)
 
-			f, err := os.ReadFile("testdata/badMetadataLookup.html")
-			Expect(err).To(BeNil())
+			resp, _ := testdata.MakeLbzResponse(415, "badMetadataLookup.html", nil, true)
 
-			resp := host.HTTPResponse{StatusCode: int32(415), Body: f, Headers: map[string]string{"x-ratelimit-remaining": "1", "x-ratelimit-reset-in": "5"}}
-
-			host.HTTPMock.On("Send", request).Return(&resp, nil)
+			host.HTTPMock.On("Send", request).Return(resp, nil)
 			actualRecommendations, actualErr := GetRecommendations("a", "")
 			Expect(actualRecommendations).To(BeNil())
 			Expect(actualErr).ToNot(BeNil())
@@ -342,11 +309,11 @@ var _ = Describe("ListenBrainz endpoints", func() {
 				code int, dataPath string, err error, rateLimited bool,
 				expected map[string]lbzMetadataLookup, expectedErr *retry.Error,
 			) {
-				payload := recLookup{RecordingMbids: mbids, Inc: "artist"}
+				payload := recLookup{RecordingMbids: mbids, Inc: "artist release"}
 				payloadBytes, jsonErr := json.Marshal(payload)
 				Expect(jsonErr).To(BeNil())
 
-				request := makeRequest(url, token, payloadBytes)
+				request := testdata.MakeLbzRequest(url, token, payloadBytes)
 				setupResponse(request, code, dataPath, err, rateLimited)
 				actualRecordings, actualErr := LookupRecordings(mbids, token)
 				validateResponse(expected, actualRecordings, expectedErr, actualErr, rateLimited)
@@ -354,35 +321,46 @@ var _ = Describe("ListenBrainz endpoints", func() {
 			Entry(
 				"Handles HTTP Error", []string{"1"}, "",
 				400, "metadata.error", nil, false,
-				nil, makeErr("ListenBrainz HTTP Error. Code: 400, Error: recording_mbid 1 is not valid.", false),
+				nil, retry.FatalError("ListenBrainz HTTP Error. Code: 400, Error: recording_mbid 1 is not valid."),
 			),
 			Entry(
 				"Handle malformed json with rateLimit", []string{"1"}, "",
 				200, "malformed", nil, true,
-				nil, makeErr("unexpected end of JSON input", false),
+				nil, retry.FatalError("unexpected end of JSON input"),
 			),
 			Entry(
 				"Retries on connection reset error", []string{"1"}, "",
-				0, "", errors.New(CONNECTION_RESET), false,
-				nil, makeErr(CONNECTION_RESET, true),
+				0, "", CONNECTION_RESET, false,
+				nil, retry.TempError(CONNECTION_RESET),
+			),
+			Entry(
+				"Retries on context deadline hit", []string{"1"}, "",
+				0, "", CONTEXT_DEADLINE, false,
+				nil, retry.TempError(CONTEXT_DEADLINE),
 			),
 			Entry(
 				"Does not retry on some other arbitrary http error", []string{"1"}, "",
 				0, "", errors.New("fake error"), false,
-				nil, makeErr("fake error", false),
+				nil, retry.FatalError("fake error"),
 			),
 			Entry(
 				"Handles valid response", []string{"9980309d-3480-4e7e-89ce-fce971a452be"}, EMPTY_UUID,
 				200, "lookupMetadata.success", nil, true,
 				map[string]lbzMetadataLookup{
-					"9980309d-3480-4e7e-89ce-fce971a452be": lbzMetadataLookup{
+					"9980309d-3480-4e7e-89ce-fce971a452be": {
 						Artist: artistCredit{
 							Artists: []extendedArtist{
 								{ArtistMbid: "d2a92ee2-27ce-4e71-bfc5-12e34fe8ef56", Name: "Mili"},
 							},
 						},
 						Recording: extendedRecording{
-							Name: "world.execute(me);",
+							ISRCs:  []string{"TCJPE1657482"},
+							Length: 211912,
+							Name:   "world.execute(me);",
+						},
+						Release: extendedRelease{
+							MBID: "38a8f6e1-0e34-4418-a89d-78240a367408",
+							Name: "Miracle Milk",
 						},
 					},
 				}, nil,
