@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out latest code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install tinygo and dependencies
         run: |
-          wget https://github.com/tinygo-org/tinygo/releases/download/v0.41.1/tinygo_0.41.1_amd64.deb
-          sudo dpkg -i tinygo_0.41.1_amd64.deb
+          wget https://github.com/tinygo-org/tinygo/releases/download/v0.42.0/tinygo_0.42.0_amd64.deb
+          sudo dpkg -i tinygo_0.42.0_amd64.deb
           sudo apt install -y binaryen
 
       - name: Download dependencies
@@ -28,7 +28,7 @@ jobs:
         run: make prod
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: listenbrainz-daily-playlist
           path: listenbrainz-daily-playlist.ndp

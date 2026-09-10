@@ -1,7 +1,7 @@
 name: Add download link to PR
 on:
   workflow_run:
-    workflows: ['Pipeline: PR']
+    workflows: ["Pipeline: PR"]
     types: [completed]
 jobs:
   pr_comment:
@@ -10,7 +10,7 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/github-script@v3
+      - uses: actions/github-script@v9
         with:
           # This snippet is public-domain, taken from
           # https://github.com/oprypin/nightly.link/blob/master/.github/workflows/pr-comment.yml
