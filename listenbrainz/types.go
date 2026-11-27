@@ -96,6 +96,7 @@ type lbzMetadataLookup struct {
 
 type artistCredit struct {
 	Artists []extendedArtist `json:"artists"`
+	Name    string           `json:"name"`
 }
 
 type extendedArtist struct {

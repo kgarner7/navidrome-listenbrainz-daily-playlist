@@ -171,7 +171,7 @@ func (j *Job) dispatchGenerate() *retry.Error {
 	for idx, song := range matches {
 		if song != nil {
 			if !j.Ratings[song.Rating] {
-				excluded = append(excluded, song.Title)
+				excluded = append(excluded, song.Title+" by "+song.Artist)
 				continue
 			}
 
@@ -190,7 +190,8 @@ func (j *Job) dispatchGenerate() *retry.Error {
 
 			allowedSongs = append(allowedSongs, song)
 		} else {
-			missing = append(missing, tracks[idx].Name)
+			track := metadata[mbids[idx]]
+			missing = append(missing, track.Recording.Name+" by "+track.Artist.Name)
 		}
 	}
 
@@ -236,10 +237,10 @@ func (j *Job) dispatchGenerate() *retry.Error {
 
 	comment := fmt.Sprintf(
 		"Jams generated on %s with %d recommendations generated on %s."+
-			"\nExcluded by rating rules: %s\nTracks not found in library: %s\nExcluded for being recent: %d",
+			"\r\nExcluded by rating rules: \r\n - %s\r\nTracks not found in library: \r\n - %s\r\nExcluded for being recent: %d",
 		now.Format(time.RFC1123), len(mbids), recsUpdated,
-		strings.Join(excluded, ", "),
-		strings.Join(missing, ", "),
+		strings.Join(excluded, "\r\n - "),
+		strings.Join(missing, "\r\n - "),
 		recentCount,
 	)
 
@@ -312,14 +313,14 @@ func (j *Job) dispatchImport() *retry.Error {
 		return nil
 	}
 
-	comment := fmt.Sprintf("Imported from playlist %s\nUpdated on: %s", playlist.Identifier, playlist.Date.Format(time.RFC3339))
+	comment := fmt.Sprintf("Imported from playlist %s\r\nUpdated on: %s", playlist.Identifier, playlist.Date.Format(time.RFC3339))
 
 	if len(missing) > 0 {
-		comment += "\nTracks not matched " + strings.Join(missing, ", ")
+		comment += "\r\nTracks not matched:\r\n - " + strings.Join(missing, "\r\n - ")
 	}
 
 	if len(excluded) > 0 {
-		comment += "\nTracks excluded by rating rule: " + strings.Join(excluded, ", ")
+		comment += "\r\nTracks excluded by rating rule:\r\n - " + strings.Join(excluded, "\r\n - ")
 	}
 
 	err = subsonic.UpdatePlaylist(j.Username, name, comment, songIds)

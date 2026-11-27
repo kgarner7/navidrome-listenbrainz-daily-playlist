@@ -352,6 +352,7 @@ var _ = Describe("ListenBrainz endpoints", func() {
 							Artists: []extendedArtist{
 								{ArtistMbid: "d2a92ee2-27ce-4e71-bfc5-12e34fe8ef56", Name: "Mili"},
 							},
+							Name: "Mili",
 						},
 						Recording: extendedRecording{
 							ISRCs:  []string{"TCJPE1657482"},

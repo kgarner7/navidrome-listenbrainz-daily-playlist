@@ -561,7 +561,7 @@ var _ = Describe("Dispatcher", func() {
 				host.MatcherMock.On("MatchSongs", MULTIPLE_SONG_MATCH, host.MatchOptions{Username: "username"}).Return(requestedTracks, nil)
 
 				if len(expected) > 0 {
-					comment := "Imported from playlist https://listenbrainz.org/playlist/00000000-0000-0000-0000-000000000000\nUpdated on: 0001-01-01T00:00:00Z"
+					comment := "Imported from playlist https://listenbrainz.org/playlist/00000000-0000-0000-0000-000000000000\r\nUpdated on: 0001-01-01T00:00:00Z"
 
 					missing := []string{}
 					for idx, track := range tracks {
@@ -571,7 +571,7 @@ var _ = Describe("Dispatcher", func() {
 					}
 
 					if len(missing) > 0 {
-						comment += "\nTracks not matched " + strings.Join(missing, ", ")
+						comment += "\r\nTracks not matched:\r\n - " + strings.Join(missing, "\r\n - ")
 					}
 
 					excluded := []string{}
@@ -582,7 +582,7 @@ var _ = Describe("Dispatcher", func() {
 					}
 
 					if len(excluded) > 0 {
-						comment += "\nTracks excluded by rating rule: " + strings.Join(excluded, ", ")
+						comment += "\r\nTracks excluded by rating rule:\r\n - " + strings.Join(excluded, "\r\n - ")
 					}
 
 					update := url.Values{}
