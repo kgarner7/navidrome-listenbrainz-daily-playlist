@@ -14,6 +14,7 @@ jobs:
         with:
           # This snippet is public-domain, taken from
           # https://github.com/oprypin/nightly.link/blob/master/.github/workflows/pr-comment.yml
+          # Found in Navidrome source code, download-link-on-pr.yml`
           script: |
             const {owner, repo} = context.repo;
             const run_id = ${{github.event.workflow_run.id}};
@@ -21,8 +22,7 @@ jobs:
             const pull_user_id = ${{github.event.sender.id}};
 
             const issue_number = await (async () => {
-              const pulls = await github.pulls.list({owner, repo});
-              for await (const {data} of github.paginate.iterator(pulls)) {
+              for await (const {data} of github.paginate.iterator(github.rest.pulls.list, {owner, repo})) {
                 for (const pull of data) {
                   if (pull.head.sha === pull_head_sha && pull.user.id === pull_user_id) {
                     return pull.number;
@@ -36,21 +36,24 @@ jobs:
               return core.error(`No matching pull request found`);
             }
 
-            const {data: {artifacts}} = await github.actions.listWorkflowRunArtifacts({owner, repo, run_id});
-            if (!artifacts.length) {
+            const {data: {artifacts}} = await github.rest.actions.listWorkflowRunArtifacts({owner, repo, run_id});
+            const downloadable = artifacts.filter((art) => !art.name.startsWith('octocov-'));
+            if (!downloadable.length) {
               return core.error(`No artifacts found`);
             }
-            let body = `Download the artifacts for this pull request:\n`;
-            for (const art of artifacts) {
+            const header = `Download the artifacts for this pull request:`;
+            let body = `${header}\n`;
+            for (const art of downloadable) {
               body += `\n* [${art.name}.zip](https://nightly.link/${owner}/${repo}/actions/artifacts/${art.id}.zip)`;
             }
 
-            const {data: comments} = await github.issues.listComments({repo, owner, issue_number});
-            const existing_comment = comments.find((c) => c.user.login === 'github-actions[bot]');
+            const {data: comments} = await github.rest.issues.listComments({repo, owner, issue_number});
+            // Match on the body too: octocov also comments as github-actions[bot].
+            const existing_comment = comments.find((c) => c.user.login === 'github-actions[bot]' && c.body.startsWith(header));
             if (existing_comment) {
               core.info(`Updating comment ${existing_comment.id}`);
-              await github.issues.updateComment({repo, owner, comment_id: existing_comment.id, body});
+              await github.rest.issues.updateComment({repo, owner, comment_id: existing_comment.id, body});
             } else {
               core.info(`Creating a comment`);
-              await github.issues.createComment({repo, owner, issue_number, body});
+              await github.rest.issues.createComment({repo, owner, issue_number, body});
             }
